@@ -3,7 +3,7 @@
 
 :root {
   --fs-caption: 0.875rem; /* smallest running text: captions, tags, sheet block (the dense record readout stays at 13px so its legend never wraps into the model) */
-  --ground: #b5b1a8;
+  --ground: #c4bdb0;
   --sheet: #edece7;
   --ink: #1d1d1b;
   --ink-2: #3a3834;
@@ -12,11 +12,31 @@
   --dusk: #24231f;
   --dusk-ink: #e9e7e1;
   --dusk-ink-2: #bdb9b0;
+  /* the void (kerf): the paper burned away. --void-accent is for borders and rules only (3.7:1 on --void); text uses --ice or --void-ink */
+  --void: #05070b;
+  --void-floor: #080b12;
+  --void-horizon: #16204a;
+  --void-ink: #ecebf2;
+  --void-ink-2: #b9bccb;
+  --void-accent: #5a64a8;
+  --ice: #a9e4ff;
+  --kerf: #ff9a4d;
 
   --fg: var(--ink);
   --fg-2: var(--ink-2);
   --knock: var(--ground);
   --mark: var(--blue);
+  --edge: #5f5a52; /* control border: 3.7:1 on the ground */
+  --focus: var(--ink);
+
+  /* neumorphism. --lx --ly is the screen direction TO the key light, --ld the shadow length; static per tone,
+     taken from the scene's key light (day: top-left plan sun). Shadows are decoration: border + text carry the contrast. */
+  --lx: -0.74;
+  --ly: -0.67;
+  --ld: 1;
+  --nm-d: 6px;
+  --nm-lo: rgba(84, 74, 60, 0.38);
+  --nm-hi: rgba(255, 252, 246, 0.62);
 
   --gutter: clamp(16px, 2.4vw, 40px);
   --font: var(--font-archivo), 'Archivo', 'Helvetica Neue', Arial, sans-serif;
@@ -28,6 +48,50 @@
   --fg-2: var(--dusk-ink-2);
   --knock: var(--dusk);
   --mark: #9aa3ff;
+  --edge: #8a8578;
+  --focus: var(--dusk-ink);
+  --lx: -0.96; /* dusk sun: low, from the left */
+  --ly: -0.27;
+  --ld: 1.2;
+  --nm-d: 8px;
+  --nm-lo: rgba(0, 0, 0, 0.55);
+  --nm-hi: rgba(255, 236, 214, 0.07);
+}
+
+/* the paper has burned away: light is the ice rim from below and behind */
+:root[data-tone='void'] {
+  --fg: var(--void-ink);
+  --fg-2: var(--void-ink-2);
+  --knock: var(--void);
+  --mark: var(--ice);
+  --edge: var(--void-accent);
+  --focus: var(--ice);
+  --lx: -0.67;
+  --ly: 0.74;
+  --ld: 0.8;
+  --nm-d: 6px;
+  --nm-lo: rgba(0, 0, 0, 0.7);
+  --nm-hi: rgba(120, 140, 255, 0.16);
+  color-scheme: dark;
+}
+
+/* the copy sits straight on the void: no feathered panel over the horizon glow */
+:root[data-tone='void'] .knock {
+  background: none;
+  box-shadow: none;
+}
+
+/* the copy sits over the model and the contours: a lit glass well with a clean edge (no feathered blob).
+   Worst case behind it is the white card tops at 22%: ink 12:1 or better. */
+:root[data-tone='void'] .frontier-text {
+  padding: 1.1rem 1.3rem 1.2rem;
+  background: rgb(5 7 11 / 0.78);
+  border: 1px solid rgb(169 228 255 / 0.22);
+  border-radius: 0.6rem;
+  backdrop-filter: blur(10px);
+  box-shadow:
+    inset 1px 1px 0 rgb(169 228 255 / 0.12),
+    0 0.6rem 2rem rgb(0 0 0 / 0.45);
 }
 
 *,
@@ -71,7 +135,7 @@ p {
 }
 
 :focus-visible {
-  outline: 2px solid var(--fg);
+  outline: 2px solid var(--focus);
   outline-offset: 3px;
 }
 
@@ -156,7 +220,7 @@ p {
   justify-content: center;
   min-height: 48px;
   padding: 0 1.25em;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--edge);
   border-radius: 0;
   background: transparent;
   color: var(--ink);
@@ -179,6 +243,7 @@ p {
 }
 
 .btn--ink {
+  border-color: var(--ink);
   background: var(--ink);
   color: var(--sheet);
 }
@@ -188,21 +253,80 @@ p {
   color: var(--sheet);
 }
 
+/* disabled: no shadow, dashed border, full-contrast text (never opacity alone) */
 .btn:disabled,
 .btn.is-disabled {
-  opacity: 0.45;
+  border-style: dashed;
+  color: var(--ink-2);
   cursor: not-allowed;
+}
+
+.btn--ink:disabled,
+.btn--ink.is-disabled {
+  border-style: solid;
+  border-color: var(--ink-2);
+  background: var(--ink-2);
+  color: var(--sheet);
 }
 
 .btn:disabled:hover,
 .btn.is-disabled:hover {
-  border-color: var(--ink);
-  color: var(--ink);
+  border-color: var(--edge);
+  color: var(--ink-2);
 }
 
-.btn--ink:disabled:hover {
-  background: var(--ink);
+.btn--ink:disabled:hover,
+.btn--ink.is-disabled:hover {
+  border-color: var(--ink-2);
+  background: var(--ink-2);
   color: var(--sheet);
+}
+
+/* ---- neumorphism: PRESSABLE controls are extruded, wells and :active are inset; content stays flat.
+   One shadow pair, offsets from the static light vars. --nm-k scales the depth per control. */
+.btn,
+.readout-controls button,
+.titleblock details {
+  --d: calc(var(--nm-d) * var(--nm-k, 1) * var(--ld));
+  --ox: calc(var(--lx) * var(--d));
+  --oy: calc(var(--ly) * var(--d));
+  box-shadow:
+    calc(var(--ox) * -1) calc(var(--oy) * -1) calc(var(--d) * 2) var(--nm-lo),
+    var(--ox) var(--oy) calc(var(--d) * 2) var(--nm-hi);
+}
+
+.readout-controls button {
+  --nm-k: 0.5;
+}
+
+.btn:active,
+.readout-controls button:active,
+.titleblock details[open] summary,
+.titleblock ol,
+.brief textarea,
+.readout::before {
+  --nm-k: 0.5;
+  --d: calc(var(--nm-d) * var(--nm-k, 1) * var(--ld));
+  --ox: calc(var(--lx) * var(--d));
+  --oy: calc(var(--ly) * var(--d));
+  box-shadow:
+    inset calc(var(--ox) * -1) calc(var(--oy) * -1) calc(var(--d) * 2) var(--nm-lo),
+    inset var(--ox) var(--oy) calc(var(--d) * 2) var(--nm-hi);
+}
+
+.brief textarea,
+.readout::before {
+  --nm-k: 0.7;
+}
+
+.btn:disabled,
+.btn.is-disabled,
+.btn:disabled:active,
+.btn.is-disabled:active,
+.readout-controls button:disabled,
+.readout-controls button:disabled:active,
+.brief textarea:disabled {
+  box-shadow: none;
 }
 
 .actions {
@@ -427,7 +551,7 @@ p {
 
 .titleblock details {
   min-width: 15.5rem;
-  border: 1px solid var(--fg);
+  border: 1px solid var(--edge);
   background: var(--knock);
 }
 
@@ -538,6 +662,22 @@ main {
   font-size: 1rem;
 }
 
+/* the readout is an inset well. The well is painted by ::before, bleeding outward from the layout box, so the
+   readout's own height (and its reach up into the model) is exactly what it was: no padding, no border here. */
+:root .readout.knock {
+  background: none;
+  box-shadow: none;
+}
+
+.readout::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -0.4rem -0.7rem -0.5rem;
+  background: var(--knock);
+  pointer-events: none;
+}
+
 .readout {
   position: relative;
   z-index: 1;
@@ -615,7 +755,7 @@ main {
 .readout-controls button {
   min-height: 36px;
   padding: 0 0.8rem;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--edge);
   background: transparent;
   color: var(--ink);
   font: inherit;
@@ -628,6 +768,12 @@ main {
 .readout-controls button:hover {
   border-color: var(--blue);
   color: var(--blue);
+}
+
+.readout-controls button:disabled {
+  border-style: dashed;
+  color: var(--ink-2);
+  cursor: not-allowed;
 }
 
 .readout-count {
@@ -787,8 +933,38 @@ main {
   grid-template-columns: repeat(12, minmax(0, 1fr));
   grid-template-rows: auto 1fr auto;
   column-gap: var(--gutter);
-  min-height: 150svh;
+  min-height: 100svh; /* wide: pinned for the kerf, so title and copy must share one screen; narrow overrides below */
   color: var(--fg);
+}
+
+/* No WebGL, or no JS: the kerf cannot be drawn, so the sheet is its end state as static CSS. No images.
+   A short lip from the paper into the void, ice hairline contours, a horizon glow. The page tone stays light;
+   the sheet scopes its own void tokens (void-ink 17:1, void-ink-2 10.7:1 on --void; 5.5:1 over a contour on the glow). */
+:root:not([data-webgl='on']) .frontier {
+  --fg: var(--void-ink);
+  --fg-2: var(--void-ink-2);
+  --knock: var(--void);
+  --mark: var(--ice);
+  --edge: var(--void-accent);
+  --focus: var(--ice);
+  background-color: var(--void);
+  background-repeat: no-repeat;
+  background-image:
+    linear-gradient(to bottom, var(--ground), var(--void)),
+    radial-gradient(ellipse 90% 40% at 50% 100%, var(--void-horizon), transparent 75%),
+    repeating-radial-gradient(
+      ellipse 150% 100% at 68% 118%,
+      transparent 0 2.2rem,
+      rgba(169, 228, 255, 0.16) 2.2rem calc(2.2rem + 1px)
+    );
+  background-size:
+    100% calc(var(--gutter) + 5rem),
+    100% 100%,
+    100% 100%;
+  background-position:
+    0 0,
+    0 0,
+    0 0;
 }
 
 .frontier-title {
@@ -929,11 +1105,21 @@ main {
 
 .next-staked {
   margin: 1.4rem 0 0;
-  padding-left: 0.8rem;
-  border-left: 3px solid var(--blue);
   font-size: 1.05rem;
   font-stretch: 85%;
   font-weight: 560;
+}
+
+/* the legend swatch is the dashed ring the plate draws around layer 14, so the note reads as its key */
+.next-staked::before {
+  content: '';
+  display: inline-block;
+  width: 1.5rem;
+  height: 0.9rem;
+  margin-right: 0.65rem;
+  border: 2px dashed var(--blue);
+  border-radius: 50%;
+  vertical-align: -0.1em;
 }
 
 .brief {
@@ -986,7 +1172,7 @@ main {
   width: 100%;
   min-height: 3.6rem;
   padding: 0.55rem 0.65rem;
-  border: 1px solid rgba(29, 29, 27, 0.35);
+  border: 1px solid var(--edge);
   border-radius: 0;
   background: #f6f5f1;
   color: var(--ink);
@@ -997,7 +1183,13 @@ main {
 }
 
 .brief textarea::placeholder {
-  color: #6f6c66;
+  color: #6f6c66; /* 4.8:1 on the well */
+}
+
+.brief textarea:disabled {
+  border-style: dashed;
+  color: var(--ink-2);
+  cursor: not-allowed;
 }
 
 .brief textarea:focus-visible {
@@ -1119,6 +1311,11 @@ main {
     grid-column: 1 / -1;
   }
 
+  /* no pin here: the kerf scrubs over the whole sheet, so it needs the scroll length */
+  .frontier {
+    min-height: 200svh;
+  }
+
   .drawers {
     grid-template-columns: minmax(0, 1fr);
     max-width: 34rem;
@@ -1184,6 +1381,53 @@ main {
 @media (min-width: 901px) and (max-height: 820px) {
   .readout-note {
     display: none;
+  }
+}
+
+/* forced colours: the system palette carries everything; shadows, haloes and the static void go */
+@media (forced-colors: active) {
+  *,
+  *::before,
+  *::after {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  .halo {
+    -webkit-text-stroke: 0;
+  }
+
+  :root:not([data-webgl='on']) .frontier {
+    background-image: none;
+  }
+
+  .readout::before {
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+
+  .btn,
+  .readout-controls button,
+  .brief textarea,
+  .titleblock details {
+    border-color: ButtonText;
+  }
+
+  .btn:disabled,
+  .btn.is-disabled,
+  .readout-controls button:disabled,
+  .brief textarea:disabled {
+    border-color: GrayText;
+    color: GrayText;
+  }
+
+  .brief {
+    border: 1px solid CanvasText;
+  }
+
+  :focus-visible,
+  .brief textarea:focus-visible {
+    outline: 2px solid Highlight;
   }
 }
 

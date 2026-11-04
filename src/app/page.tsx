@@ -173,7 +173,7 @@ export default function Page() {
         </section>
 
         <section id="frontier" className="sheet frontier" data-sheet="The frontier" data-state="frontier" aria-labelledby="frontier-title">
-          <h2 className="h2 frontier-title" id="frontier-title">
+          <h2 className="h2 frontier-title halo" id="frontier-title">
             {frontier.title.map((line) => (
               <span className="line" key={line}>
                 {line}{' '}

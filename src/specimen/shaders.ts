@@ -108,6 +108,8 @@ uniform vec4 uStakeOn;
 uniform float uGhost;
 uniform float uSteps;
 uniform float uShadows;
+uniform float uVoid;        // KERF: 0 paper .. 1 void (top-face linework turns ice)
+uniform vec3 uIceCol;
 
 const int TOP = 12;
 
@@ -237,7 +239,7 @@ vec3 linework(vec3 col, vec3 p, float f, float pxf, float px, int id) {
     float e = (f - layerR(j, aj)) / pxf;
     float w = (j % 4 == 0) ? 1.8 : 1.05;
     float line = (1.0 - smoothstep(w - 0.5, w + 0.5, e)) * step(-0.35, e);
-    vec3 ink = mix(uBlueCol, uInkCol, smoothstep(0.55, 1.0, aj));
+    vec3 ink = mix(mix(uBlueCol, uInkCol, smoothstep(0.55, 1.0, aj)), uIceCol, uVoid);
     col = mix(col, ink, line * uPlan * step(0.001, aj) * step(boundSd(p.xz), 0.0));
   }
   return overlays(col, p, f, pxf, px);
@@ -300,6 +302,32 @@ void main() {
 
 #else
 // ================================================================ model: the card stack in perspective
+// KERF: the laser keeps cutting. The plate and the paper sky burn away along the field and reveal a void floor.
+uniform mat4 uProj;         // camera.projectionMatrix / matrixWorldInverse, for gl_FragDepth
+uniform mat4 uView;
+uniform float uFrontR;      // burn front in field units
+uniform float uSkyBurn;
+uniform float uStrata;
+uniform float uKerfRing;
+uniform float uRiftQ;       // 0 = skip isolines, strata and glow
+uniform sampler2D uNoise;
+uniform vec3 uRimCol;
+uniform vec3 uRimDir;
+uniform vec3 uVoidCol;
+uniform vec3 uVoidFloorCol;
+uniform vec3 uVoidHorizonCol;
+uniform vec3 uKerfCoreCol;
+uniform vec3 uKerfCol;
+uniform vec3 uEmberCol;
+
+const float RIFT_AMP = 0.35;    // keep in sync with RIFT in scene.ts
+const float RIFT_DEPTH = 1.6;
+
+float riftR0() { return uRadii[0] + 0.15; }
+// the plate is gone where this falls below the front; the shard vertex shader uses the same key
+float riftKey(vec2 xz, float f) { return f + RIFT_AMP * textureLod(uNoise, xz * 0.02, 0.0).r; }
+bool riftGone(vec2 xz, float f) { return uFrontR > riftR0() + 0.002 && riftKey(xz, f) < uFrontR; }
+
 float sheet(float fp, float y, float y0, float t) {
   const float r = 0.006;
   vec2 w = vec2(fp + r, abs(y - y0 - 0.5 * t) - 0.5 * t + r);
@@ -357,13 +385,11 @@ bool shadowStart(vec3 hp, vec3 n, out vec3 so, out float st, out float stEnd) {
 
 vec3 poche(vec3 p, int id, float px) {
   if (id == TOP) return uInkCol;
-  // hatch: 24 lines/unit up close, coarser when zoomed out so a period never drops below ~6 pixels (that was the moire),
-  // with the edge widened by the pixel footprint so the strokes are anti-aliased
-  float freq = 1.0 / max(1.0 / 24.0, 6.0 * px);
-  float aa = px * freq * 0.6;
-  float hatch = abs(fract((p.x + p.y) * freq) - 0.5);
+  // solid card core: sheet stock a shade darker than the face, with a fibre striation along the sheet
+  // (faded out before a fibre drops under ~2 pixels), and ink seams between the layers
   float seam = abs(fract(p.y / slab() + 0.5) - 0.5) * slab();
-  vec3 c = mix(uInkCol, uSheetCol, smoothstep(0.09 - aa, 0.17 + aa, hatch));
+  float fa = 1.0 - smoothstep(0.25, 0.5, px * 260.0);
+  vec3 c = uSheetCol * (0.86 + (vnoise(vec2(p.x * 18.0, p.y * 260.0)) - 0.5) * 0.1 * fa);
   float sw = max(0.0012, 0.6 * px); // layer seams never go sub-pixel
   return mix(uInkCol, c, smoothstep(sw, 2.0 * sw, seam));
 }
@@ -444,8 +470,10 @@ void main() {
             kind = 2;
             hp = ro + rd * tGround;
             nrm = vec3(0.0, 1.0, 0.0);
-            near = field(hp.xz) < uRadii[0] + 0.7;
-            phase = shadowStart(hp, nrm, so, st, stEnd) ? 5 : (near ? 6 : 10);
+            float fh = field(hp.xz);
+            near = fh < uRadii[0] + 0.7;
+            // burned away: nothing to shade or occlude (the one KERF call inside the loop)
+            phase = riftGone(hp.xz, fh) ? 10 : shadowStart(hp, nrm, so, st, stEnd) ? 5 : (near ? 6 : 10);
           } else {
             phase = 10;
           }
@@ -478,8 +506,54 @@ void main() {
   float f = field(hp.xz);
   float pxf = clamp(fwidth(f), 1e-5, 3.0 * px);
 
+  // ---- KERF: where is this pixel relative to the burn? e > 0 = inside the cut, in band widths
+  float R0 = riftR0();
+  bool burning = uFrontR > R0 + 0.002 || uSkyBurn > 0.0;
+  float e = -2.0;
+  bool gone = false;
+  float tF = 1e4;
+  vec3 hv = ro;
+  float fF = 0.0;
+  float lr = 0.0;
+  float lw = 1.0;
+  if (burning) {
+    float nz = textureLod(uNoise, hp.xz * 0.02, 0.0).r;
+    float key = kind == 2 ? f + RIFT_AMP * nz : rd.y + 0.25 * textureLod(uNoise, rd.xz * 0.35, 0.0).r;
+    float thr = kind == 2 ? (uFrontR > R0 + 0.002 ? uFrontR : -1e3) : (uSkyBurn > 0.0 ? 1.26 * uSkyBurn : -1e3);
+    float fwd = fwidth(dist); // derivatives stay out of the branches below
+    float w = (kind == 2 ? 0.06 : 0.012) + 1.5 * min(fwidth(key), 0.2);
+    e = (thr - key) / w;
+    if (kind == 2 && uSkyBurn > 0.0) {
+      // the far plate burns down from the horizon, so no paper strip survives beyond the front's reach
+      float dc = mix(300.0, 5.0, uSkyBurn) * (0.75 + 0.5 * nz);
+      e = max(e, (dist - dc) / (0.02 * dc + 1.5 * min(fwd, 0.5 * dc)));
+    }
+    gone = kind != 1 && e > 0.0;
+    // the void floor, closed form: a plane below the plate carrying the field's isolines
+    tF = (-RIFT_DEPTH - ro.y) / min(rd.y, -1e-5);
+    hv = ro + rd * tF;
+    if (uRiftQ > 0.5) {
+      fF = max(field(hv.xz), 0.0);
+      lr = log(1.0 + fF * (uGrowth - 1.0) / uRing0) / log(uGrowth);
+      lw = max(fwidth(lr), 1e-4);
+    }
+  }
+
   vec3 col = uSkyCol;
-  if (kind == 1) {
+  vec3 wp = hp; // where this pixel really is, for depth
+  if (gone && kind == 0) {
+    col = mix(uVoidHorizonCol, uVoidCol, smoothstep(0.0, 0.55, rd.y));
+  } else if (gone) {
+    wp = hv;
+    vec3 fc = uVoidFloorCol;
+    if (uRiftQ > 0.5) {
+      float idx = floor(lr + 0.5);
+      float line = (1.0 - smoothstep(0.5 * lw, 1.5 * lw, abs(lr - idx))) * (1.0 - smoothstep(0.2, 0.55, lw));
+      line *= mix(0.55, 1.0, step(mod(idx, 4.0), 0.5)) * exp(-0.02 * tF); // every fourth ring heavier, like the plan
+      fc += uIceCol * (0.9 * line + 0.04 * exp(-0.25 * fF)) * uVoid;
+    }
+    col = mix(fc, uVoidHorizonCol, 0.85 * (1.0 - exp(-0.04 * tF)));
+  } else if (kind == 1) {
     bool cut = abs(hp.z - uCutZ) < 0.004 && nrm.z > 0.7;
     float top = smoothstep(0.4, 0.75, nrm.y);
     vec3 base;
@@ -490,14 +564,116 @@ void main() {
       vec3 wall = mix(uBlueCol, (id == TOP ? uInkCol * 1.5 : uCharCol) * stri, smoothstep(0.55, 1.0, arrival(id)));
       base = mix(wall, topTone(id, hp.xz), top);
     }
-    col = base * relLight(max(dot(nrm, uSunDir), 0.0), sh, ao, nrm.y);
+    // card tops are wrap-lit
+    float ndl = dot(nrm, uSunDir);
+    col = base * relLight(mix(max(ndl, 0.0), clamp((ndl + 0.25) / 1.25, 0.0, 1.0), top), sh, ao, nrm.y);
+    float bev = 4.0 * top * (1.0 - top); // the 0.006 bevel between face and edge
+    if (!cut) {
+      // catch-light on the bevel; the obsidian summit shines more
+      float nh = pow(max(dot(nrm, normalize(uSunDir - rd)), 0.0), 48.0);
+      float cg = id == TOP ? max(bev, 0.6 * top) * 0.35 : bev * 0.18;
+      col += uSunCol / (uSunCol * max(uSunDir.y, 0.0) + uAmbCol) * nh * cg * sh;
+      // strata: each sheet's edge lights ember from the bottom up, so the build is read again in light
+      if (uRiftQ > 0.5 && uStrata > 0.0) col += uKerfCol * clamp(uStrata - float(id), 0.0, 1.0) * bev * (id == TOP ? 1.9 : 1.2);
+    }
+    // ice rim light from below and behind, brightest on the summit
+    float fres = pow(1.0 - clamp(dot(nrm, -rd), 0.0, 1.0), 2.0);
+    col += (id == TOP ? max(base, vec3(0.3)) * 1.6 : base) * uRimCol * pow(max(dot(nrm, uRimDir), 0.0), 1.5) * (0.4 + 0.6 * fres) * ao;
     if (top > 0.5 && !cut) col = linework(col, hp, f, pxf, px, id);
   } else if (kind == 2) {
     col = linework(groundTone(hp.xz) * relLight(max(uSunDir.y, 0.0), sh, near ? ao : 1.0, 1.0), hp, f, pxf, px, -1);
+    col += uSkyCol * pow(1.0 - clamp(-rd.y, 0.0, 1.0), 5.0) * 0.08; // matte board, a grazing sheen
   }
-  if (kind != 0) col = mix(col, uSkyCol, 1.0 - exp(-max(dist - uTargetDist, 0.0) * 0.03));
+  if (kind != 0 && !gone) col = mix(col, uSkyCol, 1.0 - exp(-max(dist - uTargetDist, 0.0) * 0.03));
 
+  // the kerf itself: white-hot core, ember tail, and an analytic glow standing in for bloom
+  if (burning && kind != 1) {
+    float ec = clamp(e, 0.0, 1.0);
+    vec3 ramp = mix(mix(uKerfCoreCol, uKerfCol, smoothstep(0.0, 0.25, ec)), uEmberCol, smoothstep(0.25, 1.0, ec));
+    float band = smoothstep(-0.15, 0.0, e) * (1.0 - smoothstep(0.55, 1.0, e));
+    float glow = uRiftQ > 0.5 ? 0.6 * exp(-6.0 * abs(e)) : 0.0;
+    col += (ramp * band * 1.6 + uKerfCol * glow) * (kind == 0 ? 0.5 : 1.0); // the sky edge runs at half intensity
+  }
+  // foreshadow: an ember hairline ignites on the ring just outside the base and traces round it
+  if (kind == 2 && !gone && uKerfRing > 0.0) {
+    vec2 c = uDomain.xy + 0.5 * uDomain.zw;
+    float ang = atan(hp.z - c.y, hp.x - c.x) * 0.15915494 + 0.5;
+    float arc = 1.0 - smoothstep(uKerfRing - 0.02, uKerfRing, ang);
+    float head = exp(-40.0 * max(uKerfRing - ang, 0.0));
+    col += uKerfCol * (0.8 + 1.2 * head) * ring(f, R0, pxf, 1.1) * arc;
+  }
+
+  vec4 clip = uProj * (uView * vec4(wp, 1.0));
+  gl_FragDepth = kind == 0 ? 1.0 : clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);
   fragColor = vec4(toSRGB(col) + (hash2(gl_FragCoord.xy) - 0.5) * 0.012, 1.0);
 }
 #endif
+`
+
+// ---------------------------------------------------------------- KERF shards: flakes released where the plate opens
+// THREE.Points on a ShaderMaterial (GLSL3), blending AdditiveBlending + premultipliedAlpha:true, transparent, depthTest on, depthWrite off.
+// Attributes: position = (x, 0, z) start point on the plate (random xz in the annulus R0..30, density ~ 1/r);
+//             aSeed    = vec4 of random 0..1 (x size, y unused, z outward drift, w lift).
+// Uniforms (all shared with the plate material): uProj, uView, uResolution, uField, uDomain, uNoise, uRadii, uFrontR,
+//             uKerfCoreCol, uKerfCol, uIceCol. No clock: a flake's whole life is a function of the burn front, so rendering stays on demand.
+export const shardVert = /* glsl */ `
+precision highp float;
+precision highp int;
+in vec4 aSeed;
+uniform mat4 uProj;
+uniform mat4 uView;
+uniform vec2 uResolution;
+uniform sampler2D uField;
+uniform vec4 uDomain;
+uniform sampler2D uNoise;
+uniform float uRadii[13];
+uniform float uFrontR;
+out float vAge;
+
+float field(vec2 p) {
+  vec2 c = clamp((p - uDomain.xy) / uDomain.zw, 0.0, 1.0);
+  return textureLod(uField, c, 0.0).r + length(p - uDomain.xy - c * uDomain.zw);
+}
+
+void main() {
+  vec2 xz = position.xz;
+  // the same key as the plate shader's riftKey (RIFT_AMP 0.35, AGE 0.5), so a flake lifts exactly where the plate opens
+  float k = field(xz) + 0.35 * textureLod(uNoise, xz * 0.02, 0.0).r;
+  float age = (uFrontR - k) / 0.5;
+  if (uFrontR <= uRadii[0] + 0.152 || age <= 0.0 || age >= 1.0) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    vAge = 1.0;
+    return;
+  }
+  vec2 c0 = uDomain.xy + 0.5 * uDomain.zw;
+  vec2 out2 = normalize(xz - c0 + vec2(1e-4));
+  vec2 curl = textureLod(uNoise, xz * 0.05 + vec2(age * 0.3), 0.0).rg - 0.5;
+  vec3 world = vec3(xz + out2 * 0.6 * age * (0.7 + 0.6 * aSeed.z) + curl * 0.8 * age,
+                    0.01 + 2.4 * age * age * (0.6 + 0.8 * aSeed.w)).xzy;
+  vec4 vp = uView * vec4(world, 1.0);
+  gl_Position = uProj * vp;
+  float size = 0.05 * (0.6 + 0.8 * aSeed.x) * (1.0 - 0.4 * age); // world units
+  gl_PointSize = clamp(size * uProj[1][1] * 0.5 * uResolution.y / max(-vp.z, 0.01), 1.5, 48.0);
+  vAge = age;
+}
+`
+
+export const shardFrag = /* glsl */ `
+precision highp float;
+layout(location = 0) out highp vec4 fragColor;
+in float vAge;
+uniform vec3 uKerfCoreCol;
+uniform vec3 uKerfCol;
+uniform vec3 uIceCol;
+
+void main() {
+  vec2 c = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(c, c);
+  if (r2 >= 1.0) discard;
+  float a = exp(-3.0 * r2) * (1.0 - r2) * (1.0 - vAge);
+  // ember -> ice with age; the plate shader writes sRGB, so encode here too
+  vec3 col = mix(mix(uKerfCoreCol, uKerfCol, smoothstep(0.0, 0.12, vAge)), uIceCol, smoothstep(0.15, 0.85, vAge));
+  fragColor = vec4(pow(col, vec3(0.4545)) * a, a); // premultiplied, additive-friendly
+}
 `

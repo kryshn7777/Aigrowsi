@@ -4,8 +4,8 @@ import { Canvas, invalidate, useFrame, useThree } from '@react-three/fiber'
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { DOMAIN, SEGMENTS, fieldAt } from '@/specimen/field'
-import { createUniforms, labels, rigCamera, scene, syncUniforms } from '@/specimen/scene'
-import { bakeFrag, fullscreenVert, plateFrag } from '@/specimen/shaders'
+import { RIFT, createUniforms, labels, rigCamera, scene, syncUniforms } from '@/specimen/scene'
+import { bakeFrag, fullscreenVert, plateFrag, shardFrag, shardVert } from '@/specimen/shaders'
 
 /** Read by instruments that need to turn a pointer into a plate position. */
 export const view = { camera: null as THREE.PerspectiveCamera | null, width: 1, height: 1 }
@@ -78,6 +78,35 @@ function bakeField(gl: THREE.WebGLRenderer): THREE.Texture {
   return tex
 }
 
+/** KERF shards: start points on the plate, uniform in area density 1/r (r uniform) over the annulus R0..RMAX; deterministic. */
+function shardGeometry(count: number) {
+  let a = 0x2f6e2b1
+  const rnd = () => {
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  const cx = DOMAIN.minX + DOMAIN.sizeX / 2
+  const cz = DOMAIN.minZ + DOMAIN.sizeZ / 2
+  const pos = new Float32Array(count * 3)
+  const seed = new Float32Array(count * 4)
+  for (let i = 0; i < count; i++) {
+    const r = RIFT.R0 + (RIFT.RMAX - RIFT.R0) * rnd()
+    const th = rnd() * Math.PI * 2
+    pos[i * 3] = cx + r * Math.cos(th)
+    pos[i * 3 + 2] = cz + r * Math.sin(th)
+    seed[i * 4] = rnd()
+    seed[i * 4 + 1] = rnd()
+    seed[i * 4 + 2] = rnd()
+    seed[i * 4 + 3] = rnd()
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 4))
+  return g
+}
+
 function Plate({ onReady }: { onReady: () => void }) {
   const { gl, camera, setDpr } = useThree()
   const res = useMemo(() => new THREE.Vector2(), [])
@@ -86,12 +115,16 @@ function Plate({ onReady }: { onReady: () => void }) {
   const perf = useRef({ last: 0, sum: 0, n: 0, dpr: 1, max: 1.5, model: 1 })
 
   const modelReady = useRef(false)
+  const shardsReady = useRef(false)
 
-  const { mesh, uniforms, plan, model } = useMemo(() => {
+  const { mesh, uniforms, plan, model, shards, shardMat } = useMemo(() => {
     const u = createUniforms()
     // the camera's own matrices, by reference: always current when the plate draws
     u.uCamWorld.value = camera.matrixWorld
     u.uProjInv.value = camera.projectionMatrixInverse
+    u.uProj.value = camera.projectionMatrix
+    u.uView.value = camera.matrixWorldInverse
+    // the model writes gl_FragDepth on every path (always passes), so the shards depth-test against it
     const material = (defines: Record<string, string>) =>
       new THREE.ShaderMaterial({
         glslVersion: THREE.GLSL3,
@@ -99,13 +132,29 @@ function Plate({ onReady }: { onReady: () => void }) {
         fragmentShader: plateFrag,
         uniforms: u,
         defines,
-        depthTest: false,
-        depthWrite: false,
+        depthTest: !('PLAN' in defines),
+        depthFunc: THREE.AlwaysDepth,
+        depthWrite: !('PLAN' in defines),
       })
     const planMat = material({ PLAN: '' })
     const m = fullscreenMesh(planMat)
     m.visible = false
-    return { mesh: m, uniforms: u, plan: planMat, model: material({}) }
+    const sm = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      vertexShader: shardVert,
+      fragmentShader: shardFrag,
+      uniforms: u,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      premultipliedAlpha: true,
+      depthTest: true,
+      depthWrite: false,
+    })
+    const pts = new THREE.Points(shardGeometry(window.innerWidth <= 900 ? 2500 : 7000), sm)
+    pts.frustumCulled = false
+    pts.renderOrder = 1
+    pts.visible = false
+    return { mesh: m, uniforms: u, plan: planMat, model: material({}), shards: pts, shardMat: sm }
   }, [camera])
 
   useEffect(() => {
@@ -121,6 +170,8 @@ function Plate({ onReady }: { onReady: () => void }) {
     // Compile off the main thread where KHR_parallel_shader_compile exists: the plan first (it is what
     // the visitor sees first), then the perspective model in the background.
     const probes = [plan, model].map((m) => fullscreenMesh(m))
+    const shardProbe = new THREE.Points(shards.geometry, shardMat)
+    shardProbe.frustumCulled = false
     const stage = (probe: THREE.Mesh) => {
       const scene = new THREE.Scene()
       scene.add(probe)
@@ -146,6 +197,17 @@ function Plate({ onReady }: { onReady: () => void }) {
         warm.dispose()
         performance.mark('specimen:model')
         modelReady.current = true
+        document.documentElement.dataset.model = 'on'
+        window.dispatchEvent(new Event('specimen:model'))
+        invalidate()
+        // third stage, after the model is already usable: the shards (own Points probe over the same geometry/material)
+        const sScene = new THREE.Scene()
+        sScene.add(shardProbe)
+        return gl.compileAsync(sScene, camera).catch(() => undefined)
+      })
+      .then(() => {
+        if (cancelled) return
+        shardsReady.current = true
         invalidate()
       })
     return () => {
@@ -153,15 +215,17 @@ function Plate({ onReady }: { onReady: () => void }) {
       probes.forEach((p) => p.geometry.dispose())
       field.dispose()
     }
-  }, [gl, camera, mesh, plan, model, uniforms, setDpr, onReady])
+  }, [gl, camera, mesh, plan, model, shards, shardMat, uniforms, setDpr, onReady])
 
   useEffect(
     () => () => {
       mesh.geometry.dispose()
       plan.dispose()
       model.dispose()
+      shards.geometry.dispose()
+      shardMat.dispose()
     },
-    [mesh, plan, model],
+    [mesh, plan, model, shards, shardMat],
   )
 
   useFrame(({ size }) => {
@@ -176,6 +240,7 @@ function Plate({ onReady }: { onReady: () => void }) {
     // straight down, the plate is read directly; anything else needs the raymarched model
     const marching = modelReady.current && !(scene.pitch > 89.95 && scene.explode < 1e-4)
     mesh.material = marching ? model : plan
+    shards.visible = marching && shardsReady.current && scene.rift > 0.1
     const p = perf.current
     const want = marching ? p.model : p.max
     if (want !== p.dpr) {
@@ -215,12 +280,19 @@ function Plate({ onReady }: { onReady: () => void }) {
         // a 60 Hz display never beats ~16.7 ms, so "fast" means keeping up with it
         if (avg > 26) {
           if (p.model > 0.6) p.model = Math.max(0.6, p.model - 0.2)
-          else {
+          else if (uniforms.uShadows.value !== 0) {
             uniforms.uShadows.value = 0
             uniforms.uSteps.value = 96
+          } else if (uniforms.uRiftQ.value !== 0) {
+            // tier 3: no isolines/strata/glow, half the shards
+            uniforms.uRiftQ.value = 0
+            shards.geometry.setDrawRange(0, shards.geometry.getAttribute('position').count >> 1)
           }
         } else if (avg < 18.5) {
-          if (uniforms.uShadows.value === 0) {
+          if (uniforms.uRiftQ.value === 0) {
+            uniforms.uRiftQ.value = 1
+            shards.geometry.setDrawRange(0, Infinity)
+          } else if (uniforms.uShadows.value === 0) {
             uniforms.uShadows.value = 1
             uniforms.uSteps.value = 160
           } else p.model = Math.min(p.max, p.model + 0.2)
@@ -229,7 +301,12 @@ function Plate({ onReady }: { onReady: () => void }) {
     }
   })
 
-  return <primitive object={mesh} />
+  return (
+    <>
+      <primitive object={mesh} />
+      <primitive object={shards} />
+    </>
+  )
 }
 
 class Boundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
@@ -245,6 +322,10 @@ class Boundary extends Component<{ fallback: ReactNode; children: ReactNode }, {
 function Fallback() {
   useEffect(() => {
     document.documentElement.dataset.webgl = 'off'
+    if (document.documentElement.dataset.model) {
+      delete document.documentElement.dataset.model
+      window.dispatchEvent(new Event('specimen:model')) // lets the tone re-check
+    }
   }, [])
   // eslint-disable-next-line @next/next/no-img-element
   return <img className="plate-fallback" src={PLAN_SRC} alt="" />
@@ -285,9 +366,9 @@ export default function Specimen() {
             frameloop="demand"
             dpr={1}
             camera={{ fov: 3, near: 0.1, far: 1000, position: [0, 150, 0], manual: true }}
-            gl={{ antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance' }}
+            gl={{ antialias: false, alpha: false, depth: true, stencil: false, powerPreference: 'high-performance' }}
             onCreated={({ gl }) => {
-              gl.setClearColor('#b5b1a8')
+              gl.setClearColor('#c4bdb0')
               gl.domElement.addEventListener('webglcontextlost', (e) => {
                 e.preventDefault()
                 setLost(true)

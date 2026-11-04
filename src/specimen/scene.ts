@@ -1,6 +1,6 @@
 // One mutable scene description, written by scroll choreography (GSAP) and user instruments,
 // read once per rendered frame. Nothing here touches React state.
-import { Color, Matrix4, PerspectiveCamera, Texture, Vector2, Vector3, Vector4 } from 'three'
+import { Color, DataTexture, LinearFilter, Matrix4, PerspectiveCamera, RGBAFormat, RepeatWrapping, Texture, UnsignedByteType, Vector2, Vector3, Vector4 } from 'three'
 import { DOMAIN, FUSE, FUSE_TAIL, GROWTH, LAYER_EDGE_X, LAYER_H, RADII, STAKED_R, STAKES, SUMMIT_H, TOP } from './field'
 
 export type SceneState = {
@@ -35,6 +35,8 @@ export type SceneState = {
   ghost: number
   labels: number
   visible: number
+  /** KERF progress: 0 off, 0.06 foreshadow, 0.10 at the frontier, 1 at the peak */
+  rift: number
 }
 
 const PLAN: SceneState = {
@@ -65,11 +67,14 @@ const PLAN: SceneState = {
   ghost: 0,
   labels: 0,
   visible: 1,
+  rift: 0,
 }
 const OBLIQUE: SceneState = { ...PLAN, yaw: -26, pitch: 44, fov: 30, frame: 8.2, fit: 7.6, plan: 0.35 }
 
 /** CSS px of the copy column on wide screens (gutter + 27rem step column + air). */
 const COLUMN = 540
+
+const FRONTIER: SceneState = { ...OBLIQUE, yaw: 24, pitch: 12, fov: 34, frame: 7, fit: 11.5, ty: 0.7, shiftX: 0.1, shiftY: 0.05, dusk: 1, plan: 0, rift: 0.1 }
 
 export const STATES = {
   arrival: { ...PLAN, frame: 12.6, fit: 12, shiftX: 0.18, shiftY: 0.34, liftN: 0.14 },
@@ -84,8 +89,10 @@ export const STATES = {
   instrument: { ...OBLIQUE, yaw: -4, pitch: 20, fov: 28, frame: 6.6, fit: 12, ty: 2.4, left: COLUMN, span: 13.6, shiftX: -0.05, explode: 0.3, labels: 1, coarse: 1, plan: 0.15 },
   evaluate: { ...OBLIQUE, yaw: 0, pitch: 4, fov: 16, frame: 2.6, tx: 0, ty: 0.55, fit: 12.4, left: COLUMN, span: 12.4, shiftY: 0.1, cut: 1, coarse: 1, plan: 0 },
   refine: { ...OBLIQUE, yaw: 14, pitch: 52, fov: 30, frame: 5.4, fit: 6.4, left: COLUMN, span: 11.8, shiftY: -0.06, coarse: 0, ghost: 1, plan: 0.6 },
-  principles: { ...OBLIQUE, yaw: -8, pitch: 14, fov: 12, frame: 4.5, fit: 12.6, ty: 0.55, shiftY: -0.18, plan: 0 },
-  frontier: { ...OBLIQUE, yaw: 24, pitch: 12, fov: 34, frame: 7, fit: 11.5, ty: 0.7, shiftX: 0.1, shiftY: 0.05, dusk: 1, plan: 0 },
+  principles: { ...OBLIQUE, yaw: -8, pitch: 14, fov: 12, frame: 4.5, fit: 12.6, ty: 0.55, shiftY: -0.18, plan: 0, rift: 0.06 },
+  frontier: FRONTIER,
+  // the pinned KERF peak: the board and sky burn away; same dusk framing, drifting wider
+  kerf: { ...FRONTIER, yaw: 34, pitch: 9, fov: 40, frame: 9, shiftX: -0.2, liftN: 0.2, rift: 1 },
   // the plate is hidden while the fields are on screen; the camera returns to plan out of sight
   fields: { ...PLAN, frame: 12.6, fit: 12, shiftX: 0.18, shiftY: 0.34, liftN: 0.14, visible: 0 },
   // the arrival's own framing: the record closes where it opened
@@ -150,16 +157,31 @@ export function rigCamera(cam: PerspectiveCamera, s: SceneState, width: number, 
 // ------------------------------------------------------------------ light & palette
 const hex = (h: string) => new Color(h) // linear (three's colour management converts from sRGB)
 export const PALETTE = {
-  ground: hex('#b5b1a8'),
+  ground: hex('#d0c9bb'), // lit by the lowered sun it renders as #c4bdb0, the CSS --ground, so knocked-out copy panels vanish
   sheet: hex('#edece7'),
   ink: hex('#1d1d1b'),
   char: hex('#4a3628'),
   blue: hex('#1f2bc0'),
-  sky: hex('#b5b1a8'), // the paper colour, so knocked-out copy panels vanish into the sky
+  sky: hex('#c4bdb0'), // the paper colour, so knocked-out copy panels vanish into the sky
   duskGround: hex('#57534b'),
   duskSky: hex('#24231f'),
+  // KERF: the void the board burns into, and the emissive ramp
+  void: hex('#05070b'),
+  voidFloor: hex('#080b12'),
+  voidHorizon: hex('#16204a'),
+  kerfCore: hex('#fff4e0'),
+  kerf: hex('#ff9a4d'),
+  ember: hex('#c2410c'),
+  ice: hex('#a9e4ff'),
 }
-const SUN_DAY = new Vector3(-0.5, 0.75, -0.45).normalize()
+/** KERF geometry: R0 = base island edge, RMAX = outer reach, AMP = plate noise, AGE = shard life (field units), DEPTH = void floor below the plate */
+export const RIFT = { R0: RADII[0] + 0.15, RMAX: 30, AMP: 0.35, AGE: 0.5, DEPTH: 1.6 }
+const SUN_DAY = new Vector3(-0.55, 0.62, -0.55).normalize() // lowered: longer plan shadows
+const AMB_VOID = new Vector3(0.1, 0.12, 0.22)
+/** unit vector towards the ice rim light: below and behind the model */
+const RIM_DIR = new Vector3(-0.45, -0.5, -0.75).normalize()
+const RIM_STRENGTH = 1.4
+const KEY_VOID = 0.3 // key light multiplier at full void
 const SUN_DUSK = new Vector3(-0.92, 0.2, -0.32).normalize()
 const SUN_COL_DAY = new Vector3(1.0, 0.985, 0.96).multiplyScalar(1.7)
 const SUN_COL_DUSK = new Vector3(1.0, 0.8, 0.62).multiplyScalar(1.15)
@@ -167,6 +189,27 @@ const AMB_DAY = new Vector3(0.93, 0.95, 1.0).multiplyScalar(1.25)
 const AMB_DUSK = new Vector3(0.47, 0.46, 0.44).multiplyScalar(0.5) // neutral warm: a blue ambient tinted shadowed sheets icy
 
 const smooth = (t: number) => t * t * (3 - 2 * t)
+/** linear 0..1 ramp of x between a and b */
+const ramp = (a: number, b: number, x: number) => Math.min(1, Math.max(0, (x - a) / (b - a)))
+
+/** 128x128 tiling value-noise source: seeded (mulberry32), so every load and every shader sample agrees. */
+function makeNoise() {
+  const n = 128
+  const data = new Uint8Array(n * n * 4)
+  let a = 0x9e3779b9
+  for (let i = 0; i < data.length; i++) {
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    data[i] = (((t ^ (t >>> 14)) >>> 0) >>> 24) & 255
+  }
+  const tex = new DataTexture(data, n, n, RGBAFormat, UnsignedByteType)
+  tex.wrapS = tex.wrapT = RepeatWrapping
+  tex.magFilter = tex.minFilter = LinearFilter
+  tex.generateMipmaps = false
+  tex.needsUpdate = true
+  return tex
+}
 
 /** Writes the scene into the plate shader's uniforms. */
 export function syncUniforms(u: PlateUniforms, s: SceneState) {
@@ -174,6 +217,18 @@ export function syncUniforms(u: PlateUniforms, s: SceneState) {
   u.uSunDir.value.lerpVectors(SUN_DAY, SUN_DUSK, d).normalize()
   u.uSunCol.value.lerpVectors(SUN_COL_DAY, SUN_COL_DUSK, d)
   u.uAmbCol.value.lerpVectors(AMB_DAY, AMB_DUSK, d)
+  // KERF: everything derives from rift
+  const r = s.rift
+  const v = ramp(0.45, 0.8, r)
+  const tf = smooth(ramp(0.12, 0.6, r))
+  u.uKerfRing.value = r < 0.06 ? r / 0.3 : Math.min(1, 0.2 + 20 * (r - 0.06)) // arc traced: 0.2 at the foreshadow, closed at the frontier
+  u.uFrontR.value = RIFT.R0 + (RIFT.RMAX - RIFT.R0) * Math.pow(tf, 2.2)
+  u.uSkyBurn.value = ramp(0.38, 0.7, r)
+  u.uVoid.value = v
+  u.uStrata.value = 13 * v
+  u.uSunCol.value.multiplyScalar(1 - (1 - KEY_VOID) * v)
+  u.uAmbCol.value.lerp(AMB_VOID, v)
+  u.uRimCol.value.copy(PALETTE.ice).multiplyScalar(RIM_STRENGTH * v)
   u.uGroundCol.value.copy(PALETTE.ground).lerp(PALETTE.duskGround, d)
   u.uSkyCol.value.copy(PALETTE.sky).lerp(PALETTE.duskSky, d)
   u.uBuilt.value = s.built
@@ -199,6 +254,9 @@ export function createUniforms() {
     uResolution: { value: new Vector2(1, 1) },
     uCamWorld: { value: new Matrix4() },
     uProjInv: { value: new Matrix4() },
+    /** replaced by reference with camera.projectionMatrix / matrixWorldInverse (for gl_FragDepth) */
+    uProj: { value: new Matrix4() },
+    uView: { value: new Matrix4() },
     uCamPos: { value: new Vector3() },
     uPxWorld: { value: 0.01 },
     uTargetDist: { value: 10 },
@@ -241,6 +299,24 @@ export function createUniforms() {
     uGhost: { value: 0 },
     uSteps: { value: 160 },
     uShadows: { value: 1 },
+    // KERF (derived from scene.rift in syncUniforms)
+    uKerfRing: { value: 0 },
+    uFrontR: { value: RIFT.R0 },
+    uSkyBurn: { value: 0 },
+    uVoid: { value: 0 },
+    uStrata: { value: 0 },
+    /** governor: 1 full KERF detail, 0 = skip isolines/strata/glow */
+    uRiftQ: { value: 1 },
+    uNoise: { value: makeNoise() as Texture },
+    uRimDir: { value: RIM_DIR.clone() },
+    uRimCol: { value: new Color(0, 0, 0) },
+    uVoidCol: { value: PALETTE.void.clone() },
+    uVoidFloorCol: { value: PALETTE.voidFloor.clone() },
+    uVoidHorizonCol: { value: PALETTE.voidHorizon.clone() },
+    uKerfCoreCol: { value: PALETTE.kerfCore.clone() },
+    uKerfCol: { value: PALETTE.kerf.clone() },
+    uEmberCol: { value: PALETTE.ember.clone() },
+    uIceCol: { value: PALETTE.ice.clone() },
   }
 }
 export type PlateUniforms = ReturnType<typeof createUniforms>

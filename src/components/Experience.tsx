@@ -100,7 +100,7 @@ export default function Experience() {
             onToggle: (self) => {
               if (!self.isActive) return
               const name = el.dataset.state as StateName
-              Object.assign(scene, STATES[name])
+              Object.assign(scene, name === 'frontier' ? STATES.kerf : STATES[name])
               if (name === 'evaluation') Object.assign(live.transect, TRANSECT_EVALUATION)
             },
           }),
@@ -118,11 +118,26 @@ export default function Experience() {
         if (wide) ScrollTrigger.create({ trigger: '#principles', start: 'top top', end: '+=60%', pin: true })
         approach('#frontier', 'principles', 'frontier')
         {
+          // KERF: the board and sky burn away. Wide pins the sheet; narrow scrubs across its 200svh height.
+          // the pin is its own trigger: a pinned scrub timeline renders its from-values at scroll 0 and clobbers the arrival camera
+          if (wide) ScrollTrigger.create({ trigger: '#frontier', start: 'top top', end: '+=160%', pin: true })
+          const tl = gsap.timeline({
+            scrollTrigger: {
+              trigger: '#frontier',
+              start: 'top top',
+              // narrow: the copy panel rises over the model, so the burn must finish while it is still low on screen
+              end: wide ? '+=160%' : () => `+=${window.innerHeight * 0.5}`,
+              scrub: true,
+            },
+          })
+          move(tl, 'frontier', 'kerf', 0, { ease: 'none' })
+        }
+        {
           // fade the plate out first, then move the camera back to plan while nobody can see it
           const tl = gsap.timeline({ scrollTrigger: { trigger: '#fields', start: 'top bottom', end: 'top 35%', scrub: true } })
           tl.fromTo(scene, { visible: 1 }, { visible: 0, duration: 0.5, ease: 'power1.in', immediateRender: false })
           const { visible: _v, ...rest } = STATES.fields
-          const { visible: _w, ...from } = STATES.frontier
+          const { visible: _w, ...from } = STATES.kerf
           void _v
           void _w
           tl.fromTo(scene, from, { ...rest, duration: 0.5, ease: 'none', immediateRender: false })
@@ -180,6 +195,7 @@ export default function Experience() {
       last = Number.NaN
     }
     window.addEventListener('specimen:ready', retone)
+    window.addEventListener('specimen:model', retone)
     let lastBuilt = -1
     let lastY = window.scrollY
     const tick = () => {
@@ -195,7 +211,9 @@ export default function Experience() {
       if (plate) plate.style.opacity = String(scene.visible)
       if (scene.visible > 0.002) invalidate()
       // the page only goes dark when the dusk plate is really drawn; the static fallback plan stays light
-      const tone = root.dataset.webgl === 'on' && scene.dusk > 0.65 && scene.visible > 0.5 ? 'dark' : 'light'
+      const drawn = root.dataset.webgl === 'on' && scene.visible > 0.5
+      const tone =
+        drawn && root.dataset.model === 'on' && scene.rift > 0.5 ? 'void' : drawn && scene.dusk > 0.65 ? 'dark' : 'light'
       if (root.dataset.tone !== tone) root.dataset.tone = tone
       const built = Math.min(13, Math.floor(scene.built + 0.001))
       if (builtEl && built !== lastBuilt) {
@@ -232,6 +250,7 @@ export default function Experience() {
     return () => {
       window.removeEventListener('specimen:ready', onReady)
       window.removeEventListener('specimen:ready', retone)
+      window.removeEventListener('specimen:model', retone)
       document.removeEventListener('click', onClick)
       gsap.ticker.remove(tick)
       gsap.ticker.remove(raf)
