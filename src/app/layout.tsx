@@ -39,13 +39,13 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#c4bdb0',
-  colorScheme: 'light',
+  themeColor: '#04050a',
+  colorScheme: 'dark',
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={archivo.variable} data-tone="light">
+    <html lang="en" className={archivo.variable}>
       <body>{children}</body>
     </html>
   )

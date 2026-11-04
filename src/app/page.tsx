@@ -1,4 +1,5 @@
 import BriefComposer from '@/components/BriefComposer'
+import Cosmos from '@/components/Cosmos'
 import Experience from '@/components/Experience'
 import FieldDrawers from '@/components/FieldDrawers'
 import PlateLabels from '@/components/PlateLabels'
@@ -27,6 +28,7 @@ export default function Page() {
       <a className="skip" href="#record">
         Skip to the content
       </a>
+      <Cosmos />
       <Specimen />
       <noscript>
         <style>{'.knock{background:var(--knock);box-shadow:0 0 1.2rem .8rem var(--knock)}'}</style>
@@ -191,7 +193,7 @@ export default function Page() {
 
         <section id="fields" className="sheet fields" data-sheet="Fields" data-state="fields" aria-labelledby="fields-title">
           <header className="chapter-head">
-            <h2 className="h2" id="fields-title">
+            <h2 className="h2 halo" id="fields-title">
               {fields.title}
             </h2>
             <p className="lede">{fields.intro}</p>

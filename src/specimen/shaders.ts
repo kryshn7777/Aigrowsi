@@ -83,8 +83,6 @@ uniform float uDrop;
 uniform vec3 uSunDir;
 uniform vec3 uSunCol;
 uniform vec3 uAmbCol;
-uniform vec3 uSkyCol;
-uniform vec3 uGroundCol;
 uniform vec3 uSheetCol;
 uniform vec3 uInkCol;
 uniform vec3 uCharCol;
@@ -108,8 +106,10 @@ uniform vec4 uStakeOn;
 uniform float uGhost;
 uniform float uSteps;
 uniform float uShadows;
-uniform float uVoid;        // KERF: 0 paper .. 1 void (top-face linework turns ice)
-uniform vec3 uIceCol;
+uniform vec3 uIceCol;       // survey light: current
+uniform vec3 uMarkCol;      // survey light: proposed
+uniform vec3 uRimDir;       // unit vector towards the galactic core, specimen world space
+uniform vec3 uRimCol;       // core light: bulge colour x clamp(6/d_core, .15, 1.6)
 
 const int TOP = 12;
 
@@ -174,32 +174,43 @@ float segDist(vec2 p, vec2 a, vec2 b) {
 float dash(vec2 q, float s) { return mod(floor(q.x / s) + floor(q.y / s), 2.0); }
 float ring(float f, float r, float pxf, float w) { return 1.0 - smoothstep(w - 0.5, w + 0.5, abs(f - r) / pxf); }
 
-vec3 overlays(vec3 col, vec3 p, float f, float pxf, float px) {
+// straight-alpha "over": d is the layer below (rgb straight, a coverage), c a colour laid on it with coverage cov.
+// On an opaque card (a = 1) this is exactly mix(d.rgb, c, cov); on empty space it builds up anti-aliased light.
+vec4 lay(vec4 d, vec3 c, float cov) {
+  cov = clamp(cov, 0.0, 1.0);
+  float a = cov + d.a * (1.0 - cov);
+  return vec4((c * cov + d.rgb * d.a * (1.0 - cov)) / max(a, 1e-5), a);
+}
+
+// Survey marks. On a card they are ink (current) and blue (proposed); on the invisible survey plane they are light: ice / mark.
+vec4 overlays(vec4 col, vec3 p, float f, float pxf, float px, bool card) {
   vec2 q = p.xz;
+  vec3 cur = card ? uInkCol : uIceCol;
+  vec3 prop = card ? uBlueCol : uMarkCol;
 
   if (uGhost > 0.001) // the unrefined summit, kept as a rollback path
-    col = mix(col, uInkCol, ring(f, 0.3, pxf, 0.9) * dash(q, 0.025) * uGhost);
+    col = lay(col, cur, ring(f, 0.3, pxf, 0.9) * dash(q, 0.025) * uGhost);
 
   if (uFront.y > 0.001) {
-    col = mix(col, uInkCol, ring(f, uRollbackR, pxf, 0.9) * dash(q, 0.03) * uFront.y);
-    col = mix(col, uBlueCol, ring(f, uFront.x, pxf, 1.3) * dash(q, 0.09) * uFront.y);
+    col = lay(col, cur, ring(f, uRollbackR, pxf, 0.9) * dash(q, 0.03) * uFront.y);
+    col = lay(col, prop, ring(f, uFront.x, pxf, 1.3) * dash(q, 0.09) * uFront.y);
   }
 
   if (uStaked > 0.001) {
-    col = mix(col, uBlueCol, ring(f, uStakedR, pxf, 1.3) * dash(q, 0.11) * uStaked);
+    col = lay(col, prop, ring(f, uStakedR, pxf, 1.3) * dash(q, 0.11) * uStaked);
     for (int k = 0; k < 4; k++) {
       float on = uStakeOn[k];
       vec2 s = (q - uStakes[k]) / px;
       float post = 1.0 - smoothstep(3.0, 4.0, max(abs(s.x), abs(s.y)));
       // the ring closes in as the stake is driven
       float halo = 1.0 - smoothstep(0.6, 1.4, abs(length(s) - mix(30.0, 9.0, on)));
-      col = mix(col, uBlueCol, max(post * step(0.5, on), halo) * step(0.001, on) * min(1.0, on * 1.6) * uStaked);
+      col = lay(col, prop, max(post * step(0.5, on), halo) * step(0.001, on) * min(1.0, on * 1.6) * uStaked);
     }
   }
 
   if (uBoundOn > 0.001) {
     float b = abs(boundSd(q)) / px;
-    col = mix(col, uBlueCol, (1.0 - smoothstep(0.7, 1.6, b)) * dash(q, 0.16) * uBoundOn);
+    col = lay(col, prop, (1.0 - smoothstep(0.7, 1.6, b)) * dash(q, 0.16) * uBoundOn);
   }
 
   if (uFuseOn > 0.001) {
@@ -213,7 +224,7 @@ vec3 overlays(vec3 col, vec3 p, float f, float pxf, float px) {
       vec2 a = uFuse[k].xy + vec2(0.0, s * rr);
       vec2 b = vec2(uFuse[k].x, uFuseTail[k] - s * 5.0 * px);
       float lead = 1.0 - smoothstep(0.5, 1.2, segDist(q, a, b) / px);
-      col = mix(col, uBlueCol, max(max(circle, centre), lead) * uFuseOn);
+      col = lay(col, prop, max(max(circle, centre), lead) * uFuseOn);
     }
   }
 
@@ -226,32 +237,34 @@ vec3 overlays(vec3 col, vec3 p, float f, float pxf, float px) {
     float k = ringIndex(f);
     float crossing = max(ring(f, ringRadius(k), pxf, 2.4), ring(f, ringRadius(k + 1.0), pxf, 2.4));
     float dots = crossing * (1.0 - smoothstep(2.4, 3.4, ds)) * step(f, uRadii[0] + 0.01);
-    col = mix(col, uBlueCol, max(max(line, ends), dots) * uTransectOn);
+    col = lay(col, prop, max(max(line, ends), dots) * uTransectOn);
   }
   return col;
 }
 
 // Contour of the sheet resting above this surface. One-sided, so overlapping letter contours never draw.
-vec3 linework(vec3 col, vec3 p, float f, float pxf, float px, int id) {
+// id < 0 is the survey plane (light on nothing); id >= 0 is a card (ink on paper).
+vec4 linework(vec4 col, vec3 p, float f, float pxf, float px, int id) {
+  bool card = id >= 0;
   int j = id + 1;
   if (j <= TOP) {
     float aj = arrival(j);
     float e = (f - layerR(j, aj)) / pxf;
     float w = (j % 4 == 0) ? 1.8 : 1.05;
     float line = (1.0 - smoothstep(w - 0.5, w + 0.5, e)) * step(-0.35, e);
-    vec3 ink = mix(mix(uBlueCol, uInkCol, smoothstep(0.55, 1.0, aj)), uIceCol, uVoid);
-    col = mix(col, ink, line * uPlan * step(0.001, aj) * step(boundSd(p.xz), 0.0));
+    float settled = smoothstep(0.55, 1.0, aj);
+    vec3 ink = card ? mix(uBlueCol, uInkCol, settled) : mix(uMarkCol, uIceCol, settled);
+    col = lay(col, ink, line * uPlan * step(0.001, aj) * step(boundSd(p.xz), 0.0));
   }
-  return overlays(col, p, f, pxf, px);
+  return overlays(col, p, f, pxf, px, card);
 }
 
 vec3 topTone(int id, vec2 q) {
-  vec3 base = id == TOP ? uInkCol : uSheetCol * (0.97 + 0.05 * hash1(float(id) * 7.31));
+  // paper a touch darker and warmer (~8%) so a large white slab does not glare on the dark page; the ink summit is untouched
+  vec3 base = id == TOP ? uInkCol : uSheetCol * vec3(0.945, 0.915, 0.87) * (0.97 + 0.05 * hash1(float(id) * 7.31));
   base *= 0.985 + 0.03 * vnoise(q * 46.0 + float(id) * 3.1);
   return mix(mix(base, uBlueCol, 0.32), base, smoothstep(0.55, 1.0, arrival(id))); // still settling: a proposed change
 }
-
-vec3 groundTone(vec2 q) { return uGroundCol * (0.993 + 0.014 * vnoise(q * 40.0)); }
 
 vec3 toSRGB(vec3 c) {
   c = max(c, 0.0);
@@ -276,11 +289,14 @@ void main() {
   float f = field(p.xz);
   float pxf = clamp(fwidth(f), 1e-5, 3.0 * uPxWorld);
   float b = boundSd(p.xz);
-  int i = b > 0.0 ? -1 : layerAt(f);
+  int iL = b > 0.0 ? -1 : layerAt(f);
+  // the base sheet's edge, anti-aliased: pixels half a texel outside it still carry its card
+  float a0 = (b > 0.0 || arrival(0) <= 0.0) ? 0.0 : clamp((layerR(0, arrival(0)) - f) / pxf + 0.5, 0.0, 1.0);
+  int i = (iL < 0 && a0 > 0.0) ? 0 : iL;
   float H = topY(i);
 
   float sh = 1.0;
-  if (uShadows > 0.5 && i < TOP && b <= 0.0) {
+  if (uShadows > 0.5 && i >= 0 && i < TOP && b <= 0.0) {
     // walls of higher sheets, sampled toward the sun across the plate
     vec2 sdir = normalize(uSunDir.xz + vec2(1e-5));
     float rise = uSunDir.y / max(length(uSunDir.xz), 1e-3);
@@ -291,42 +307,42 @@ void main() {
     }
   }
   float occ = 1.0;
-  if (i < TOP && b <= 0.0) {
+  if (i >= 0 && i < TOP && b <= 0.0) {
     float aj = arrival(i + 1);
     if (aj > 0.0) occ = mix(0.78, 1.0, smoothstep(0.0, 0.055, f - layerR(i + 1, aj)));
   }
-  vec3 base = i < 0 ? groundTone(p.xz) : topTone(i, p.xz);
-  vec3 col = linework(base * relLight(max(uSunDir.y, 0.0), sh, occ, 1.0), p, f, pxf, uPxWorld, i);
-  fragColor = vec4(toSRGB(col) + (hash2(gl_FragCoord.xy) - 0.5) * 0.012, 1.0);
+  // no board: the plate is transparent where no card stands, and only the survey marks draw there
+  vec4 o = i < 0 ? vec4(0.0) : vec4(topTone(i, p.xz) * relLight(max(uSunDir.y, 0.0), sh, occ, 1.0), i == 0 ? a0 : 1.0);
+  if (i >= 0) {
+    // the galactic core rims the edges that face it: a thin warm gradient inside each card's outer edge (before the ink, so linework stays crisp)
+    vec2 rs = (uRimDir * mat3(uCamWorld)).xy; // core direction on screen (view-space xy)
+    float face = max(dot(normalize(vec2(dFdx(f), dFdy(f)) + 1e-9), normalize(rs + 1e-5)), 0.0) * min(1.0, 1.5 * length(rs));
+    float de = (layerR(i, arrival(i)) - f) / pxf;
+    float band = (1.0 - smoothstep(0.5, 7.0, de)) * step(-0.5, de);
+    o.rgb += max(topTone(i, p.xz), vec3(0.3)) * uRimCol * (1.3 * face * band * (i == 0 ? a0 : 1.0));
+  }
+  o = linework(o, p, f, pxf, uPxWorld, iL);
+  fragColor = vec4((toSRGB(o.rgb) + (hash2(gl_FragCoord.xy) - 0.5) * 0.012) * o.a, o.a); // premultiplied
 }
 
 #else
 // ================================================================ model: the card stack in perspective
-// KERF: the laser keeps cutting. The plate and the paper sky burn away along the field and reveal a void floor.
+// KERF: the laser keeps cutting. The survey plane opens along the field; the ember band and the shards mark the front.
 uniform mat4 uProj;         // camera.projectionMatrix / matrixWorldInverse, for gl_FragDepth
 uniform mat4 uView;
 uniform float uFrontR;      // burn front in field units
-uniform float uSkyBurn;
 uniform float uStrata;
 uniform float uKerfRing;
 uniform float uRiftQ;       // 0 = skip isolines, strata and glow
 uniform sampler2D uNoise;
-uniform vec3 uRimCol;
-uniform vec3 uRimDir;
-uniform vec3 uVoidCol;
-uniform vec3 uVoidFloorCol;
-uniform vec3 uVoidHorizonCol;
 uniform vec3 uKerfCoreCol;
 uniform vec3 uKerfCol;
 uniform vec3 uEmberCol;
 
 const float RIFT_AMP = 0.35;    // keep in sync with RIFT in scene.ts
-const float RIFT_DEPTH = 1.6;
 
 float riftR0() { return uRadii[0] + 0.15; }
-// the plate is gone where this falls below the front; the shard vertex shader uses the same key
-float riftKey(vec2 xz, float f) { return f + RIFT_AMP * textureLod(uNoise, xz * 0.02, 0.0).r; }
-bool riftGone(vec2 xz, float f) { return uFrontR > riftR0() + 0.002 && riftKey(xz, f) < uFrontR; }
+// the survey plane opens where f + noise falls below the front; the shard vertex shader uses the same key (RIFT_AMP)
 
 float sheet(float fp, float y, float y0, float t) {
   const float r = 0.006;
@@ -397,13 +413,13 @@ vec3 poche(vec3 p, int id, float px) {
 void main() {
   vec3 rd = viewRay();
   vec3 ro = uCamPos;
-  float tGround = rd.y < -1e-5 ? -ro.y / rd.y : -1.0;
+  float tGround = rd.y < -1e-5 ? -ro.y / rd.y : -1.0; // the invisible survey plane: it only carries marks
   float t0, t1;
   bool inBox = uBuilt > 0.0 && box(ro, rd, t0, t1);
 
   // phases: 0 march, 1-4 normal taps, 5 shadow ray, 6-9 occlusion taps, 10 done
   int phase = 0;
-  int kind = 0;       // 0 sky, 1 sheet, 2 plate
+  int kind = 0;       // 0 nothing (transparent), 1 sheet, 2 survey plane
   int id = -1;
   int prim = 0;
   float t = max(t0, 0.0);
@@ -416,14 +432,19 @@ void main() {
   float occ = 0.0;
   float sca = 1.0;
   float eps = 0.0012;   // normal taps widen with the pixel, so distant edges do not sparkle
-  bool near = false;
+  // closest approach of a missed ray, in pixels of the ray's own width: the silhouette is anti-aliased from it
+  float mn = 1e3;
+  vec3 qm = ro;
+  float tm = 0.0;
+  int idm = -1;
+  float edgeA = 1.0;
 
   if (!inBox) {
+    // outside the model's bounding box there is nothing to march: at most the survey plane
     phase = 10;
     if (tGround > 0.0) {
       kind = 2;
       hp = ro + rd * tGround;
-      nrm = vec3(0.0, 1.0, 0.0);
     }
   }
 
@@ -455,25 +476,30 @@ void main() {
     }
 
     if (phase == 0) {
-      if (d < 0.3 * uPxWorld * t / uTargetDist) {
+      float pw = uPxWorld * t / uTargetDist;
+      if (d < 0.3 * pw) {
         kind = 1;
         hp = q;
-        eps = max(0.0012, 0.6 * uPxWorld * t / uTargetDist);
+        eps = max(0.0012, 0.6 * pw);
         id = hid;
         phase = 1;
       } else {
+        if (hid >= 0 && d < mn * pw) { mn = d / max(pw, 1e-6); qm = q; tm = t; idm = hid; }
         t += max(d * 0.8, leap);
         prim++;
         if (t > t1 || float(prim) >= uSteps) {
-          // left the stack's box: the ray lands on the plate or goes on to the sky
-          if (tGround > 0.0) {
+          if (mn < 0.9) {
+            // grazed the silhouette: shade the closest-approach point, carrying partial coverage
+            kind = 1;
+            hp = qm;
+            eps = max(0.0012, 0.6 * uPxWorld * tm / uTargetDist);
+            id = idm;
+            edgeA = clamp(1.0 - (mn - 0.3) / 0.6, 0.0, 1.0);
+            phase = 1;
+          } else if (tGround > 0.0) {
             kind = 2;
             hp = ro + rd * tGround;
-            nrm = vec3(0.0, 1.0, 0.0);
-            float fh = field(hp.xz);
-            near = fh < uRadii[0] + 0.7;
-            // burned away: nothing to shade or occlude (the one KERF call inside the loop)
-            phase = riftGone(hp.xz, fh) ? 10 : shadowStart(hp, nrm, so, st, stEnd) ? 5 : (near ? 6 : 10);
+            phase = 10;
           } else {
             phase = 10;
           }
@@ -484,13 +510,12 @@ void main() {
       phase++;
       if (phase == 5) {
         nrm = normalize(nrm);
-        near = true;
         if (!shadowStart(hp, nrm, so, st, stEnd)) phase = 6;
       }
     } else if (phase == 5) {
       sh = min(sh, 9.0 * d / st);
       st += max(clamp(d * 0.85, 0.008, 0.35), leap);
-      if (sh < 0.002 || st > stEnd) phase = near ? 6 : 10;
+      if (sh < 0.002 || st > stEnd) phase = 6;
     } else {
       occ += (aoStep(phase - 6) - d) * sca;
       sca *= 0.8;
@@ -506,54 +531,20 @@ void main() {
   float f = field(hp.xz);
   float pxf = clamp(fwidth(f), 1e-5, 3.0 * px);
 
-  // ---- KERF: where is this pixel relative to the burn? e > 0 = inside the cut, in band widths
+  // ---- KERF: where is this survey-plane pixel relative to the front? e > 0 = inside the cut, in band widths
   float R0 = riftR0();
-  bool burning = uFrontR > R0 + 0.002 || uSkyBurn > 0.0;
+  bool burning = uFrontR > R0 + 0.002;
   float e = -2.0;
-  bool gone = false;
-  float tF = 1e4;
-  vec3 hv = ro;
-  float fF = 0.0;
-  float lr = 0.0;
-  float lw = 1.0;
   if (burning) {
-    float nz = textureLod(uNoise, hp.xz * 0.02, 0.0).r;
-    float key = kind == 2 ? f + RIFT_AMP * nz : rd.y + 0.25 * textureLod(uNoise, rd.xz * 0.35, 0.0).r;
-    float thr = kind == 2 ? (uFrontR > R0 + 0.002 ? uFrontR : -1e3) : (uSkyBurn > 0.0 ? 1.26 * uSkyBurn : -1e3);
-    float fwd = fwidth(dist); // derivatives stay out of the branches below
-    float w = (kind == 2 ? 0.06 : 0.012) + 1.5 * min(fwidth(key), 0.2);
-    e = (thr - key) / w;
-    if (kind == 2 && uSkyBurn > 0.0) {
-      // the far plate burns down from the horizon, so no paper strip survives beyond the front's reach
-      float dc = mix(300.0, 5.0, uSkyBurn) * (0.75 + 0.5 * nz);
-      e = max(e, (dist - dc) / (0.02 * dc + 1.5 * min(fwd, 0.5 * dc)));
-    }
-    gone = kind != 1 && e > 0.0;
-    // the void floor, closed form: a plane below the plate carrying the field's isolines
-    tF = (-RIFT_DEPTH - ro.y) / min(rd.y, -1e-5);
-    hv = ro + rd * tF;
-    if (uRiftQ > 0.5) {
-      fF = max(field(hv.xz), 0.0);
-      lr = log(1.0 + fF * (uGrowth - 1.0) / uRing0) / log(uGrowth);
-      lw = max(fwidth(lr), 1e-4);
-    }
+    float key = f + RIFT_AMP * textureLod(uNoise, hp.xz * 0.02, 0.0).r;
+    float w = 0.06 + 1.5 * min(fwidth(key), 0.2);
+    e = (uFrontR - key) / w;
   }
+  bool gone = kind == 2 && e > 0.0;
 
-  vec3 col = uSkyCol;
-  vec3 wp = hp; // where this pixel really is, for depth
-  if (gone && kind == 0) {
-    col = mix(uVoidHorizonCol, uVoidCol, smoothstep(0.0, 0.55, rd.y));
-  } else if (gone) {
-    wp = hv;
-    vec3 fc = uVoidFloorCol;
-    if (uRiftQ > 0.5) {
-      float idx = floor(lr + 0.5);
-      float line = (1.0 - smoothstep(0.5 * lw, 1.5 * lw, abs(lr - idx))) * (1.0 - smoothstep(0.2, 0.55, lw));
-      line *= mix(0.55, 1.0, step(mod(idx, 4.0), 0.5)) * exp(-0.02 * tF); // every fourth ring heavier, like the plan
-      fc += uIceCol * (0.9 * line + 0.04 * exp(-0.25 * fF)) * uVoid;
-    }
-    col = mix(fc, uVoidHorizonCol, 0.85 * (1.0 - exp(-0.04 * tF)));
-  } else if (kind == 1) {
+  // straight colour + coverage; the plate canvas is transparent and premultiplied
+  vec4 o = vec4(0.0);
+  if (kind == 1) {
     bool cut = abs(hp.z - uCutZ) < 0.004 && nrm.z > 0.7;
     float top = smoothstep(0.4, 0.75, nrm.y);
     vec3 base;
@@ -566,7 +557,7 @@ void main() {
     }
     // card tops are wrap-lit
     float ndl = dot(nrm, uSunDir);
-    col = base * relLight(mix(max(ndl, 0.0), clamp((ndl + 0.25) / 1.25, 0.0, 1.0), top), sh, ao, nrm.y);
+    vec3 col = base * relLight(mix(max(ndl, 0.0), clamp((ndl + 0.25) / 1.25, 0.0, 1.0), top), sh, ao, nrm.y);
     float bev = 4.0 * top * (1.0 - top); // the 0.006 bevel between face and edge
     if (!cut) {
       // catch-light on the bevel; the obsidian summit shines more
@@ -576,36 +567,38 @@ void main() {
       // strata: each sheet's edge lights ember from the bottom up, so the build is read again in light
       if (uRiftQ > 0.5 && uStrata > 0.0) col += uKerfCol * clamp(uStrata - float(id), 0.0, 1.0) * bev * (id == TOP ? 1.9 : 1.2);
     }
-    // ice rim light from below and behind, brightest on the summit
+    // the galactic core rims the card edges and bevels (not the flat faces), brightest on the summit
     float fres = pow(1.0 - clamp(dot(nrm, -rd), 0.0, 1.0), 2.0);
-    col += (id == TOP ? max(base, vec3(0.3)) * 1.6 : base) * uRimCol * pow(max(dot(nrm, uRimDir), 0.0), 1.5) * (0.4 + 0.6 * fres) * ao;
-    if (top > 0.5 && !cut) col = linework(col, hp, f, pxf, px, id);
+    col += (id == TOP ? max(base, vec3(0.3)) * 1.6 : base) * uRimCol * 1.8 * pow(max(dot(nrm, uRimDir), 0.0), 1.5) * (1.0 - top) * (0.4 + 0.6 * fres) * ao;
+    o = vec4(col, edgeA);
+    if (top > 0.5 && !cut) o = linework(o, hp, f, pxf, px, id);
   } else if (kind == 2) {
-    col = linework(groundTone(hp.xz) * relLight(max(uSunDir.y, 0.0), sh, near ? ao : 1.0, 1.0), hp, f, pxf, px, -1);
-    col += uSkyCol * pow(1.0 - clamp(-rd.y, 0.0, 1.0), 5.0) * 0.08; // matte board, a grazing sheen
+    // survey marks only, as light; a mark is gone where the front has passed
+    o = linework(vec4(0.0), hp, f, pxf, px, -1);
+    if (gone) o.a = 0.0;
+    if (burning) {
+      // the kerf itself: white-hot core, ember tail, and an analytic glow standing in for bloom
+      float ec = clamp(e, 0.0, 1.0);
+      vec3 ramp = mix(mix(uKerfCoreCol, uKerfCol, smoothstep(0.0, 0.25, ec)), uEmberCol, smoothstep(0.25, 1.0, ec));
+      float band = smoothstep(-0.15, 0.0, e) * (1.0 - smoothstep(0.55, 1.0, e));
+      float glow = uRiftQ > 0.5 ? 0.6 * exp(-6.0 * abs(e)) : 0.0;
+      vec3 em = ramp * band * 1.6 + uKerfCol * glow;
+      float m = max(em.r, max(em.g, em.b));
+      o = lay(o, em / max(m, 1e-4), m);
+    }
+    // foreshadow: an ember hairline ignites on the ring just outside the base and traces round it
+    if (!gone && uKerfRing > 0.0) {
+      vec2 c = uDomain.xy + 0.5 * uDomain.zw;
+      float ang = atan(hp.z - c.y, hp.x - c.x) * 0.15915494 + 0.5;
+      float arc = 1.0 - smoothstep(uKerfRing - 0.02, uKerfRing, ang);
+      float head = exp(-40.0 * max(uKerfRing - ang, 0.0));
+      o = lay(o, mix(uKerfCol, uKerfCoreCol, clamp(head, 0.0, 1.0)), ring(f, R0, pxf, 1.1) * arc);
+    }
   }
-  if (kind != 0 && !gone) col = mix(col, uSkyCol, 1.0 - exp(-max(dist - uTargetDist, 0.0) * 0.03));
 
-  // the kerf itself: white-hot core, ember tail, and an analytic glow standing in for bloom
-  if (burning && kind != 1) {
-    float ec = clamp(e, 0.0, 1.0);
-    vec3 ramp = mix(mix(uKerfCoreCol, uKerfCol, smoothstep(0.0, 0.25, ec)), uEmberCol, smoothstep(0.25, 1.0, ec));
-    float band = smoothstep(-0.15, 0.0, e) * (1.0 - smoothstep(0.55, 1.0, e));
-    float glow = uRiftQ > 0.5 ? 0.6 * exp(-6.0 * abs(e)) : 0.0;
-    col += (ramp * band * 1.6 + uKerfCol * glow) * (kind == 0 ? 0.5 : 1.0); // the sky edge runs at half intensity
-  }
-  // foreshadow: an ember hairline ignites on the ring just outside the base and traces round it
-  if (kind == 2 && !gone && uKerfRing > 0.0) {
-    vec2 c = uDomain.xy + 0.5 * uDomain.zw;
-    float ang = atan(hp.z - c.y, hp.x - c.x) * 0.15915494 + 0.5;
-    float arc = 1.0 - smoothstep(uKerfRing - 0.02, uKerfRing, ang);
-    float head = exp(-40.0 * max(uKerfRing - ang, 0.0));
-    col += uKerfCol * (0.8 + 1.2 * head) * ring(f, R0, pxf, 1.1) * arc;
-  }
-
-  vec4 clip = uProj * (uView * vec4(wp, 1.0));
-  gl_FragDepth = kind == 0 ? 1.0 : clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);
-  fragColor = vec4(toSRGB(col) + (hash2(gl_FragCoord.xy) - 0.5) * 0.012, 1.0);
+  vec4 clip = uProj * (uView * vec4(hp, 1.0));
+  gl_FragDepth = (kind == 0 || (kind == 2 && o.a < 0.004)) ? 1.0 : clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);
+  fragColor = vec4((toSRGB(o.rgb) + (hash2(gl_FragCoord.xy) - 0.5) * 0.012) * o.a, o.a); // premultiplied
 }
 #endif
 `
@@ -637,7 +630,7 @@ float field(vec2 p) {
 
 void main() {
   vec2 xz = position.xz;
-  // the same key as the plate shader's riftKey (RIFT_AMP 0.35, AGE 0.5), so a flake lifts exactly where the plate opens
+  // the same key as the plate shader's front key (RIFT_AMP 0.35, AGE 0.5), so a flake lifts exactly where the plate opens
   float k = field(xz) + 0.35 * textureLod(uNoise, xz * 0.02, 0.0).r;
   float age = (uFrontR - k) / 0.5;
   if (uFrontR <= uRadii[0] + 0.152 || age <= 0.0 || age >= 1.0) {

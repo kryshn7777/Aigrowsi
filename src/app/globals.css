@@ -1,97 +1,38 @@
-/* AIGROW — a growth record.
-   Ground: grey board. Sheets: museum board. Ink: graphite. Blue marks what is proposed, never what is settled. */
+/* AIGROW — a growth record, seen from inside a galaxy.
+   Page: deep space (a canvas behind everything). Objects: museum board (the cards, the brief, the key button).
+   Copy sits on --scrim panels so it reads on any starfield; display type keeps a --space stroke. */
 
 :root {
   --fs-caption: 0.875rem; /* smallest running text: captions, tags, sheet block (the dense record readout stays at 13px so its legend never wraps into the model) */
-  --ground: #c4bdb0;
-  --sheet: #edece7;
-  --ink: #1d1d1b;
-  --ink-2: #3a3834;
-  --char: #4a3628;
-  --blue: #1f2bc0;
-  --dusk: #24231f;
-  --dusk-ink: #e9e7e1;
-  --dusk-ink-2: #bdb9b0;
-  /* the void (kerf): the paper burned away. --void-accent is for borders and rules only (3.7:1 on --void); text uses --ice or --void-ink */
-  --void: #05070b;
-  --void-floor: #080b12;
-  --void-horizon: #16204a;
-  --void-ink: #ecebf2;
-  --void-ink-2: #b9bccb;
-  --void-accent: #5a64a8;
-  --ice: #a9e4ff;
-  --kerf: #ff9a4d;
+  --space: #04050a;
+  --fg: #ecebe6;
+  --fg-2: #b8b7c6;
+  --scrim: rgb(4 5 10 / 0.8);
+  --knock: var(--scrim);
+  --edge: #8a90b4; /* control border: 5.1:1 on the control surface, 3.8:1 on the scrim */
+  --mark: #9aa3ff; /* proposed */
+  --ice: #a9e4ff; /* settled, focus */
+  --focus: var(--ice);
 
-  --fg: var(--ink);
-  --fg-2: var(--ink-2);
-  --knock: var(--ground);
-  --mark: var(--blue);
-  --edge: #5f5a52; /* control border: 3.7:1 on the ground */
-  --focus: var(--ink);
-
-  /* neumorphism. --lx --ly is the screen direction TO the key light, --ld the shadow length; static per tone,
-     taken from the scene's key light (day: top-left plan sun). Shadows are decoration: border + text carry the contrast. */
-  --lx: -0.74;
-  --ly: -0.67;
-  --ld: 1;
-  --nm-d: 6px;
-  --nm-lo: rgba(84, 74, 60, 0.38);
-  --nm-hi: rgba(255, 252, 246, 0.62);
+  /* obsidian controls: a dark glassless surface, fixed warm light from the core side (no per-frame light vars) */
+  --ctl: rgb(8 10 18 / 0.9);
+  --key: #ecebe6; /* the paper key button */
+  --key-ink: #04050a;
+  --key-hover: var(--ice);
+  --nm-lo: rgba(0, 0, 0, 0.65);
+  --nm-hi: rgba(255, 214, 165, 0.3);
+  --nm-in-lo: rgba(0, 0, 0, 0.7);
+  --nm-in-hi: rgba(255, 214, 165, 0.1);
 
   --gutter: clamp(16px, 2.4vw, 40px);
   --font: var(--font-archivo), 'Archivo', 'Helvetica Neue', Arial, sans-serif;
-  color-scheme: light;
-}
-
-:root[data-tone='dark'] {
-  --fg: var(--dusk-ink);
-  --fg-2: var(--dusk-ink-2);
-  --knock: var(--dusk);
-  --mark: #9aa3ff;
-  --edge: #8a8578;
-  --focus: var(--dusk-ink);
-  --lx: -0.96; /* dusk sun: low, from the left */
-  --ly: -0.27;
-  --ld: 1.2;
-  --nm-d: 8px;
-  --nm-lo: rgba(0, 0, 0, 0.55);
-  --nm-hi: rgba(255, 236, 214, 0.07);
-}
-
-/* the paper has burned away: light is the ice rim from below and behind */
-:root[data-tone='void'] {
-  --fg: var(--void-ink);
-  --fg-2: var(--void-ink-2);
-  --knock: var(--void);
-  --mark: var(--ice);
-  --edge: var(--void-accent);
-  --focus: var(--ice);
-  --lx: -0.67;
-  --ly: 0.74;
-  --ld: 0.8;
-  --nm-d: 6px;
-  --nm-lo: rgba(0, 0, 0, 0.7);
-  --nm-hi: rgba(120, 140, 255, 0.16);
   color-scheme: dark;
 }
 
-/* the copy sits straight on the void: no feathered panel over the horizon glow */
-:root[data-tone='void'] .knock {
-  background: none;
-  box-shadow: none;
-}
-
-/* the copy sits over the model and the contours: a lit glass well with a clean edge (no feathered blob).
-   Worst case behind it is the white card tops at 22%: ink 12:1 or better. */
-:root[data-tone='void'] .frontier-text {
-  padding: 1.1rem 1.3rem 1.2rem;
-  background: rgb(5 7 11 / 0.78);
-  border: 1px solid rgb(169 228 255 / 0.22);
-  border-radius: 0.6rem;
-  backdrop-filter: blur(10px);
-  box-shadow:
-    inset 1px 1px 0 rgb(169 228 255 / 0.12),
-    0 0.6rem 2rem rgb(0 0 0 / 0.45);
+/* testing hook: ?worst paints the page white so the worst-case starfield can be checked for contrast */
+:root[data-worst='1'],
+:root[data-worst='1'] body {
+  background: #fff;
 }
 
 *,
@@ -101,14 +42,14 @@
 }
 
 html {
-  background: var(--ground);
+  background: var(--space);
   -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
-  background: var(--ground);
-  color: var(--ink);
+  background: var(--space);
+  color: var(--fg);
   font-family: var(--font);
   font-size: 1.0625rem;
   font-stretch: 100%;
@@ -121,8 +62,8 @@ body {
 }
 
 ::selection {
-  background: var(--blue);
-  color: var(--sheet);
+  background: var(--mark);
+  color: var(--space);
 }
 
 a {
@@ -136,7 +77,8 @@ p {
 
 :focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: 3px;
+  outline-offset: 0;
+  box-shadow: 0 0 0 4px var(--space); /* ice inside, space outside: 3:1 against any starfield */
 }
 
 /* ---------------------------------------------------------------- type */
@@ -197,19 +139,37 @@ p {
   color: var(--fg-2);
 }
 
-/* Map lettering: big type knocks the contour lines out around itself instead of sitting on top of them. */
+/* Display type keeps a --space stroke so it reads over any star. */
 @supports (paint-order: stroke fill) {
   .halo {
     paint-order: stroke fill;
-    -webkit-text-stroke: 0.09em var(--knock);
+    -webkit-text-stroke: 0.09em var(--space);
   }
 }
 
-/* Text blocks over the plate clear the drawing beneath them, the way a label clears a contour.
-   Wide screens frame the specimen beside the copy, so only narrow screens (and dusk) need it. */
+/* Text blocks over the plate and the stars sit on a scrim: a feathered panel, 0.8 of --space. */
+.knock {
+  background: var(--scrim);
+  box-shadow: 0 0 1.4rem 1rem var(--scrim);
+}
+
+/* the one glass surface: the copy over the model and the front. Worst case behind it is white at 22%: ink 9:1 or better. */
 .frontier-text {
-  background: var(--knock);
-  box-shadow: 0 0 0 0.8rem var(--knock);
+  padding: 1.1rem 1.3rem 1.2rem;
+  background: rgb(5 7 11 / 0.78);
+  border: 1px solid rgb(169 228 255 / 0.22);
+  border-radius: 0.6rem;
+  backdrop-filter: blur(10px);
+  box-shadow:
+    inset 1px 1px 0 rgb(169 228 255 / 0.12),
+    0 0.6rem 2rem rgb(0 0 0 / 0.45);
+}
+
+@media (prefers-reduced-transparency: reduce), (pointer: coarse) {
+  .frontier-text {
+    background: rgb(5 7 11 / 0.9);
+    backdrop-filter: none;
+  }
 }
 
 /* ---------------------------------------------------------------- controls */
@@ -222,8 +182,8 @@ p {
   padding: 0 1.25em;
   border: 1px solid var(--edge);
   border-radius: 0;
-  background: transparent;
-  color: var(--ink);
+  background: var(--ctl);
+  color: var(--fg);
   font: inherit;
   font-size: 1rem;
   font-stretch: 85%;
@@ -238,65 +198,52 @@ p {
 }
 
 .btn:hover {
-  border-color: var(--blue);
-  color: var(--blue);
+  border-color: var(--mark);
+  color: var(--mark);
 }
 
+/* the paper key: the one pale object among the dark controls */
 .btn--ink {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--sheet);
+  border-color: var(--key);
+  background: var(--key);
+  color: var(--key-ink);
 }
 
 .btn--ink:hover {
-  background: var(--blue);
-  color: var(--sheet);
+  border-color: var(--key-hover);
+  background: var(--key-hover);
+  color: var(--key-ink);
 }
 
 /* disabled: no shadow, dashed border, full-contrast text (never opacity alone) */
 .btn:disabled,
 .btn.is-disabled {
+  border-color: var(--edge);
   border-style: dashed;
-  color: var(--ink-2);
+  background: var(--ctl);
+  color: var(--fg-2);
   cursor: not-allowed;
-}
-
-.btn--ink:disabled,
-.btn--ink.is-disabled {
-  border-style: solid;
-  border-color: var(--ink-2);
-  background: var(--ink-2);
-  color: var(--sheet);
 }
 
 .btn:disabled:hover,
 .btn.is-disabled:hover {
   border-color: var(--edge);
-  color: var(--ink-2);
+  background: var(--ctl);
+  color: var(--fg-2);
 }
 
-.btn--ink:disabled:hover,
-.btn--ink.is-disabled:hover {
-  border-color: var(--ink-2);
-  background: var(--ink-2);
-  color: var(--sheet);
-}
-
-/* ---- neumorphism: PRESSABLE controls are extruded, wells and :active are inset; content stays flat.
-   One shadow pair, offsets from the static light vars. --nm-k scales the depth per control. */
+/* ---- obsidian: PRESSABLE controls are extruded (a lo shadow below, a warm highlight on the top edge);
+   wells and :active are inset; content stays flat. Shadows are decoration: border + text carry the contrast. */
 .btn,
 .readout-controls button,
 .titleblock details {
-  --d: calc(var(--nm-d) * var(--nm-k, 1) * var(--ld));
-  --ox: calc(var(--lx) * var(--d));
-  --oy: calc(var(--ly) * var(--d));
   box-shadow:
-    calc(var(--ox) * -1) calc(var(--oy) * -1) calc(var(--d) * 2) var(--nm-lo),
-    var(--ox) var(--oy) calc(var(--d) * 2) var(--nm-hi);
+    0 5px 10px var(--nm-lo),
+    inset 0 1px 0 var(--nm-hi);
 }
 
-.readout-controls button {
-  --nm-k: 0.5;
+.btn--ink {
+  box-shadow: 0 4px 8px var(--nm-lo);
 }
 
 .btn:active,
@@ -305,18 +252,9 @@ p {
 .titleblock ol,
 .brief textarea,
 .readout::before {
-  --nm-k: 0.5;
-  --d: calc(var(--nm-d) * var(--nm-k, 1) * var(--ld));
-  --ox: calc(var(--lx) * var(--d));
-  --oy: calc(var(--ly) * var(--d));
   box-shadow:
-    inset calc(var(--ox) * -1) calc(var(--oy) * -1) calc(var(--d) * 2) var(--nm-lo),
-    inset var(--ox) var(--oy) calc(var(--d) * 2) var(--nm-hi);
-}
-
-.brief textarea,
-.readout::before {
-  --nm-k: 0.7;
+    inset 0 4px 8px var(--nm-in-lo),
+    inset 0 -1px 0 var(--nm-in-hi);
 }
 
 .btn:disabled,
@@ -342,8 +280,8 @@ p {
   left: var(--gutter);
   top: var(--gutter);
   padding: 0.8rem 1rem;
-  background: var(--ink);
-  color: var(--sheet);
+  background: var(--key);
+  color: var(--key-ink);
   transform: translateY(-200%);
 }
 
@@ -352,6 +290,33 @@ p {
 }
 
 /* ---------------------------------------------------------------- plate */
+
+/* stacking, back to front: .cosmos (z 0, mounted first) < .plate (z 0, later in the DOM, transparent) < labels and main (z 1) < mast (z 10) */
+.cosmos {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.cosmos canvas {
+  display: block;
+}
+
+/* the static arrival poster: the cosmos' first frame, shown until the live galaxy draws (and after context loss) */
+.cosmos-poster {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.cosmos-poster img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 
 .plate {
   position: fixed;
@@ -372,6 +337,11 @@ p {
   transform: translate(-50%, -50%);
 }
 
+/* the static plan is drawn dark ink on paper: invert it to light lines over the galaxy */
+.plate-fallback {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 /* placeholder before the first WebGL frame: sits where the arrival framing puts the plan, then fades out */
 .plate-placeholder {
   left: 50%;
@@ -390,7 +360,7 @@ p {
   display: none;
 }
 
-/* the static plan cannot be reframed per sheet: it keeps to the room beside the copy, and copy keeps its knock */
+/* the static plan cannot be reframed per sheet: it keeps to the room beside the copy */
 @media (min-width: 901px) {
   .plate-fallback {
     left: calc(540px + (100% - 540px) / 2);
@@ -404,10 +374,6 @@ p {
     width: min(56vw, 1000px);
   }
 
-  :root[data-webgl='off'] .knock {
-    background: var(--knock);
-    box-shadow: 0 0 1.2rem 0.8rem var(--knock);
-  }
 }
 
 .instrument {
@@ -445,9 +411,9 @@ p {
   line-height: 1;
   translate: 10px -50%;
   text-shadow:
-    0 0 2px var(--knock),
-    0 0 2px var(--knock),
-    0 0 4px var(--knock);
+    0 0 2px var(--space),
+    0 0 2px var(--space),
+    0 0 4px var(--space);
   will-change: transform, opacity;
 }
 
@@ -473,10 +439,9 @@ p {
   translate: 0 -50%;
 }
 
-/* callouts at the end of a leader drawn on the plate: centred, haloed in the sheet they sit on */
+/* callouts at the end of a leader drawn on the plate: centred */
 .tag--below,
 .tag--above {
-  --knock: var(--sheet);
   translate: -50% 0;
 }
 
@@ -516,6 +481,15 @@ p {
   text-decoration: none;
 }
 
+/* the masthead floats straight over the stars: a --space halo, as on the tags */
+.wordmark,
+.mast-line {
+  text-shadow:
+    0 0 2px var(--space),
+    0 0 2px var(--space),
+    0 0 4px var(--space);
+}
+
 .mast > .wordmark,
 .mast-line,
 .titleblock {
@@ -552,7 +526,7 @@ p {
 .titleblock details {
   min-width: 15.5rem;
   border: 1px solid var(--edge);
-  background: var(--knock);
+  background: var(--ctl);
 }
 
 .titleblock summary {
@@ -674,7 +648,7 @@ main {
   position: absolute;
   z-index: -1;
   inset: -0.4rem -0.7rem -0.5rem;
-  background: var(--knock);
+  background: var(--ctl);
   pointer-events: none;
 }
 
@@ -719,21 +693,22 @@ main {
 }
 
 .profile-solid {
-  fill: var(--sheet);
-  stroke: var(--ink);
+  fill: var(--fg);
+  fill-opacity: 0.14;
+  stroke: var(--fg);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .profile-base {
-  stroke: var(--blue);
+  stroke: var(--mark);
   stroke-width: 1;
   stroke-dasharray: 4 3;
   vector-effect: non-scaling-stroke;
 }
 
 .profile-text {
-  fill: var(--ink-2);
+  fill: var(--fg-2);
   font-size: 14px; /* user units: about 11.5px in the readout, larger beside the steps */
   font-stretch: 75%;
   font-weight: 600;
@@ -756,8 +731,8 @@ main {
   min-height: 36px;
   padding: 0 0.8rem;
   border: 1px solid var(--edge);
-  background: transparent;
-  color: var(--ink);
+  background: var(--ctl);
+  color: var(--fg);
   font: inherit;
   font-size: 0.8125rem;
   font-stretch: 80%;
@@ -766,13 +741,13 @@ main {
 }
 
 .readout-controls button:hover {
-  border-color: var(--blue);
-  color: var(--blue);
+  border-color: var(--mark);
+  color: var(--mark);
 }
 
 .readout-controls button:disabled {
   border-style: dashed;
-  color: var(--ink-2);
+  color: var(--fg-2);
   cursor: not-allowed;
 }
 
@@ -798,7 +773,7 @@ main {
 }
 
 .readout-num {
-  color: var(--ink-2);
+  color: var(--fg-2);
   font-stretch: 75%;
   font-variant-numeric: tabular-nums;
 }
@@ -809,7 +784,7 @@ main {
 }
 
 .readout-note {
-  color: var(--ink-2);
+  color: var(--fg-2);
   font-size: 0.75rem;
   font-stretch: 80%;
 }
@@ -842,7 +817,10 @@ main {
   font-size: 0.875rem;
   font-stretch: 80%;
   font-weight: 560;
-  color: var(--ink-2);
+  color: var(--fg-2);
+  text-shadow:
+    0 0 2px var(--space),
+    0 0 4px var(--space);
 }
 
 .marks li {
@@ -853,8 +831,8 @@ main {
 }
 
 .marks li[data-active] {
-  color: var(--ink);
-  border-top: 3px solid var(--blue);
+  color: var(--fg);
+  border-top: 3px solid var(--mark);
   padding-top: calc(0.6rem - 2px);
 }
 
@@ -884,7 +862,7 @@ main {
 .step-num {
   font-stretch: 62%;
   font-weight: 400;
-  color: var(--ink-2);
+  color: var(--fg-2);
   font-variant-numeric: tabular-nums;
 }
 
@@ -926,8 +904,7 @@ main {
   font-size: 0.95rem;
 }
 
-/* frontier: dusk. The plate goes dark and the page tone follows it (data-tone), so the copy is never
-   light-on-light during the approach or when WebGL is off. */
+/* frontier: the front crosses the disk. Title and copy share one screen when pinned. */
 .frontier {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -935,36 +912,6 @@ main {
   column-gap: var(--gutter);
   min-height: 100svh; /* wide: pinned for the kerf, so title and copy must share one screen; narrow overrides below */
   color: var(--fg);
-}
-
-/* No WebGL, or no JS: the kerf cannot be drawn, so the sheet is its end state as static CSS. No images.
-   A short lip from the paper into the void, ice hairline contours, a horizon glow. The page tone stays light;
-   the sheet scopes its own void tokens (void-ink 17:1, void-ink-2 10.7:1 on --void; 5.5:1 over a contour on the glow). */
-:root:not([data-webgl='on']) .frontier {
-  --fg: var(--void-ink);
-  --fg-2: var(--void-ink-2);
-  --knock: var(--void);
-  --mark: var(--ice);
-  --edge: var(--void-accent);
-  --focus: var(--ice);
-  background-color: var(--void);
-  background-repeat: no-repeat;
-  background-image:
-    linear-gradient(to bottom, var(--ground), var(--void)),
-    radial-gradient(ellipse 90% 40% at 50% 100%, var(--void-horizon), transparent 75%),
-    repeating-radial-gradient(
-      ellipse 150% 100% at 68% 118%,
-      transparent 0 2.2rem,
-      rgba(169, 228, 255, 0.16) 2.2rem calc(2.2rem + 1px)
-    );
-  background-size:
-    100% calc(var(--gutter) + 5rem),
-    100% 100%,
-    100% 100%;
-  background-position:
-    0 0,
-    0 0,
-    0 0;
 }
 
 .frontier-title {
@@ -977,7 +924,6 @@ main {
   grid-column: 8 / 13;
   grid-row: 3;
   align-self: end;
-  box-shadow: 0 0 1.2rem 1rem var(--knock);
 }
 
 .frontier-text p {
@@ -997,6 +943,19 @@ main {
 /* fields */
 .fields {
   padding-bottom: calc(var(--gutter) * 4);
+}
+
+/* the fields head and drawers carry no .knock class in the markup: give them the same scrim */
+/* the pulled-back galaxy shows through the fields sheet: only the running text sits on scrim, the line figures
+   float on a thin --space halo of their own, and the display heading keeps its .halo stroke */
+.fields .chapter-head .lede,
+.drawer figcaption {
+  background: var(--scrim);
+  box-shadow: 0 0 1.4rem 1rem var(--scrim);
+}
+
+.drawer svg {
+  filter: drop-shadow(0 0 1px var(--space)) drop-shadow(0 0 5px rgb(4 5 10 / 0.7));
 }
 
 .fields .chapter-head {
@@ -1032,14 +991,14 @@ main {
   width: 100%;
   height: auto;
   margin-bottom: 1.2rem;
-  border-top: 1px solid var(--ink);
+  border-top: 1px solid var(--fg);
   padding-top: 1.2rem;
   overflow: visible;
 }
 
 .drawer-ring {
   fill: none;
-  stroke: var(--ink);
+  stroke: var(--fg);
   stroke-width: 0.9;
   vector-effect: non-scaling-stroke;
 }
@@ -1049,12 +1008,12 @@ main {
 }
 
 .drawer-ring--dashed {
-  stroke: var(--blue);
+  stroke: var(--mark);
   stroke-dasharray: 5 4;
 }
 
 .drawer-seed {
-  fill: var(--ink);
+  fill: var(--fg);
 }
 
 .drawer figcaption p {
@@ -1117,20 +1076,40 @@ main {
   width: 1.5rem;
   height: 0.9rem;
   margin-right: 0.65rem;
-  border: 2px dashed var(--blue);
+  border: 2px dashed var(--mark);
   border-radius: 50%;
   vertical-align: -0.1em;
 }
 
+/* the brief stays museum board: an opaque paper object with its own ink tokens (ink 14:1, ink-2 9.9:1, blue 8.2:1 on the sheet) */
 .brief {
+  --fg: #1d1d1b;
+  --fg-2: #3a3834;
+  --mark: #1f2bc0;
+  --edge: #5f5a52;
+  --ctl: transparent;
+  --key: #1d1d1b;
+  --key-ink: #edece7;
+  --key-hover: #1f2bc0;
+  --nm-lo: rgba(84, 74, 60, 0.38);
+  --nm-hi: rgba(255, 252, 246, 0.62);
+  --nm-in-lo: rgba(84, 74, 60, 0.38);
+  --nm-in-hi: rgba(255, 252, 246, 0.62);
   grid-column: 1 / 6;
   position: relative;
   padding: 1.4rem 1.4rem 1.2rem;
-  background: var(--sheet);
+  background: #edece7;
+  color: var(--fg);
   /* the sheet's cut edge */
   box-shadow:
-    2px 2px 0 var(--char),
+    2px 2px 0 #4a3628,
     0 0 0 1px rgba(29, 29, 27, 0.18);
+}
+
+.brief :focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 .brief-head {
@@ -1138,7 +1117,7 @@ main {
   justify-content: space-between;
   margin-bottom: 1rem;
   padding-bottom: 0.6rem;
-  border-bottom: 1px solid var(--ink);
+  border-bottom: 1px solid var(--fg);
   max-width: none;
 }
 
@@ -1159,12 +1138,12 @@ main {
 .brief-stake {
   width: 0.55rem;
   height: 0.55rem;
-  border: 1px solid var(--blue);
+  border: 1px solid var(--mark);
   transition: background-color 0.3s;
 }
 
 .brief-field[data-answered] .brief-stake {
-  background: var(--blue);
+  background: var(--mark);
 }
 
 .brief textarea {
@@ -1175,7 +1154,7 @@ main {
   border: 1px solid var(--edge);
   border-radius: 0;
   background: #f6f5f1;
-  color: var(--ink);
+  color: var(--fg);
   font: inherit;
   font-size: 1rem;
   line-height: 1.45;
@@ -1188,14 +1167,14 @@ main {
 
 .brief textarea:disabled {
   border-style: dashed;
-  color: var(--ink-2);
+  color: var(--fg-2);
   cursor: not-allowed;
 }
 
 .brief textarea:focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--mark);
   outline-offset: 0;
-  border-color: var(--blue);
+  border-color: var(--mark);
 }
 
 .brief-actions {
@@ -1224,7 +1203,7 @@ main {
   column-gap: var(--gutter);
   margin: 0 var(--gutter) var(--gutter);
   padding-top: 1.2rem;
-  border-top: 1px solid var(--ink);
+  border-top: 1px solid var(--fg);
 }
 
 .foot-line {
@@ -1270,6 +1249,8 @@ main {
 
   .record-text {
     grid-row: 1;
+    /* the plan is visible first; the copy rises over it afterwards (margin, not padding: the knock panel would hide the plan) */
+    margin-top: 38svh;
   }
 
   .readout {
@@ -1280,11 +1261,6 @@ main {
 
   .readout-layers {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .knock {
-    background: var(--knock);
-    box-shadow: 0 0 1.2rem 0.8rem var(--knock);
   }
 
   .fields .chapter-head {
@@ -1372,8 +1348,10 @@ main {
     top: calc(var(--gutter) + 11rem);
   }
 
-  .knock {
-    box-shadow: 0 0 0.9rem 0.55rem var(--knock);
+  .knock:not(.frontier-text),
+  .fields .chapter-head .lede,
+  .drawer figcaption {
+    box-shadow: 0 0 0.9rem 0.55rem var(--scrim);
   }
 }
 
@@ -1397,8 +1375,8 @@ main {
     -webkit-text-stroke: 0;
   }
 
-  :root:not([data-webgl='on']) .frontier {
-    background-image: none;
+  .frontier-text {
+    backdrop-filter: none;
   }
 
   .readout::before {

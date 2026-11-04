@@ -1,11 +1,11 @@
 'use client'
 
-import { invalidate } from '@react-three/fiber'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import Lenis from 'lenis'
 import { useEffect } from 'react'
-import { STATES, TRANSECT_EVALUATION, live, scene, signature, type SceneState, type StateName } from '@/specimen/scene'
+import { roots } from '@/specimen/galaxy'
+import { STATES, TRANSECT_EVALUATION, cosmosSignature, live, plateSignature, scene, type SceneState, type StateName } from '@/specimen/scene'
 
 const KEYS = Object.keys(STATES.arrival) as (keyof SceneState)[]
 
@@ -73,11 +73,14 @@ export default function Experience() {
     const plate = document.querySelector<HTMLElement>('.plate')
     const builtEl = document.querySelector<HTMLElement>('[data-built]')
     root.dataset.motion = reduce ? 'reduced' : 'full'
+    if (new URLSearchParams(location.search).has('dbg')) (window as unknown as { __aig: unknown }).__aig = { scene, STATES, roots, live }
 
     const intro = !reduce && window.scrollY < 40
     // single-screen chapters hold still only where they fit on one screen
     const wide = window.matchMedia('(min-width: 901px)').matches
-    Object.assign(scene, STATES.arrival, { built: intro ? 0 : 13 })
+    // the intro dollies in from 42 kpc (log10 = 1.623) to the arrival's distance
+    const logD0 = 1.623
+    Object.assign(scene, STATES.arrival, { built: intro ? 0 : 13 }, intro ? { cLogD: logD0 } : {})
 
     let lenis: Lenis | null = null
     const raf = (time: number) => lenis?.raf(time * 1000)
@@ -88,7 +91,11 @@ export default function Experience() {
       gsap.ticker.lagSmoothing(0)
     }
 
-    let introTween: gsap.core.Tween | null = null
+    const intros: gsap.core.Tween[] = []
+    const endIntro = () => {
+      intros.forEach((t) => t.progress(1).kill())
+      intros.length = 0
+    }
     const ctx = gsap.context(() => {
       if (reduce) {
         // One still frame per passage: no scrubbing, pinning or camera travel.
@@ -107,13 +114,20 @@ export default function Experience() {
         )
       } else {
         approach('#record', 'arrival', 'record')
-        if (wide) ScrollTrigger.create({ trigger: '#record', start: 'top top', end: '+=100%', pin: true })
-        approach('#pillars', 'record', 'orchestration', 'top bottom', 'top top')
+        if (wide) {
+          // the pin is its own trigger; the galaxy turns under the transect while the sheet is held
+          ScrollTrigger.create({ trigger: '#record', start: 'top top', end: '+=100%', pin: true })
+          const tl = gsap.timeline({ scrollTrigger: { trigger: '#record', start: 'top top', end: '+=100%', scrub: true } })
+          move(tl, 'record', 'recordHold', 0, { ease: 'none' })
+        }
+        // phones: the plan sits above the copy first, then drops into the gap above the readout once the copy has passed
+        if (!wide) approach('.record-text', 'record', 'recordLow', 'bottom 85%', 'bottom 50%')
+        approach('#pillars', wide ? 'recordHold' : 'recordLow', 'orchestration', 'top bottom', 'top top')
         sequence('#pillars', 'orchestration')
         approach('#method', 'governance', 'lift')
         sequence('#phases', 'lift', 0.5)
         // the method rebuilds the stack itself; an unfinished arrival must not fight it
-        ScrollTrigger.create({ trigger: '#method', start: 'top bottom', onEnter: () => introTween?.progress(1).kill() })
+        ScrollTrigger.create({ trigger: '#method', start: 'top bottom', onEnter: endIntro })
         approach('#principles', 'refine', 'principles', 'top bottom', wide ? 'top top' : 'top 15%')
         if (wide) ScrollTrigger.create({ trigger: '#principles', start: 'top top', end: '+=60%', pin: true })
         approach('#frontier', 'principles', 'frontier')
@@ -133,19 +147,24 @@ export default function Experience() {
           move(tl, 'frontier', 'kerf', 0, { ease: 'none' })
         }
         {
-          // fade the plate out first, then move the camera back to plan while nobody can see it
+          // fade the plate out first (the lock lets go with it), then move the camera back to plan while nobody can see it
           const tl = gsap.timeline({ scrollTrigger: { trigger: '#fields', start: 'top bottom', end: 'top 35%', scrub: true } })
-          tl.fromTo(scene, { visible: 1 }, { visible: 0, duration: 0.5, ease: 'power1.in', immediateRender: false })
-          const { visible: _v, ...rest } = STATES.fields
-          const { visible: _w, ...from } = STATES.kerf
-          void _v
-          void _w
+          tl.fromTo(scene, { visible: 1, cLock: 1 }, { visible: 0, cLock: 0, duration: 0.5, ease: 'power1.in', immediateRender: false })
+          const { visible: _v, cLock: _l, ...rest } = STATES.fields
+          const { visible: _w, cLock: _m, ...from } = STATES.kerf
+          void [_v, _l, _w, _m]
           tl.fromTo(scene, from, { ...rest, duration: 0.5, ease: 'none', immediateRender: false })
         }
-        approach('#resolution', 'fields', 'resolution', 'top bottom', 'top top')
-        // a held beat: the record closes on the same view it opened with
+        // the bottom of the fields: the galaxy falls away into the deep field
+        approach('#fields', 'fields', 'deep', 'top 35%', 'bottom bottom')
+        approach('#resolution', 'deep', 'resolution', 'top bottom', 'top top')
+        // a held beat: the record closes on the same view it opened with, the galaxy easing in a little
         ScrollTrigger.create({ trigger: '#resolution', start: 'top top', end: '+=60%', pin: true })
-        approach('#next', 'resolution', 'next', 'top bottom', 'top 30%')
+        {
+          const tl = gsap.timeline({ scrollTrigger: { trigger: '#resolution', start: 'top top', end: '+=60%', scrub: true } })
+          move(tl, 'resolution', 'resolutionHold', 0, { ease: 'none' })
+        }
+        approach('#next', 'resolutionHold', 'next', 'top bottom', 'top 30%')
         // once the held beat ends the closing line leaves the screen instead of scrolling through the model
         gsap.fromTo(
           '.resolution-line',
@@ -183,19 +202,19 @@ export default function Experience() {
 
     const onReady = () => {
       if (intro && window.scrollY < 40) {
-        introTween = gsap.fromTo(scene, { built: 0 }, { built: 13, duration: 3.6, ease: 'power1.inOut', delay: 0.2 })
+        intros.push(gsap.fromTo(scene, { built: 0 }, { built: 13, duration: 3.6, ease: 'power1.inOut', delay: 0.2 }))
       } else if (scene.built < 1) scene.built = 13
     }
     window.addEventListener('specimen:ready', onReady)
+    // the dolly starts when the galaxy has its first frame
+    const onCosmos = () => {
+      if (intro && window.scrollY < 40) intros.push(gsap.fromTo(scene, { cLogD: logD0 }, { cLogD: STATES.arrival.cLogD, duration: 3.6, ease: 'power1.inOut', delay: 0.2 }))
+    }
+    window.addEventListener('cosmos:ready', onCosmos)
 
     // Render only when the picture changes; keep the HUD honest about what is drawn.
     let last = Number.NaN
-    // the page tone depends on the plate being drawn: re-evaluate once WebGL is up even if the scene has not moved
-    const retone = () => {
-      last = Number.NaN
-    }
-    window.addEventListener('specimen:ready', retone)
-    window.addEventListener('specimen:model', retone)
+    let lastC = Number.NaN
     let lastBuilt = -1
     let lastY = window.scrollY
     const tick = () => {
@@ -205,16 +224,19 @@ export default function Experience() {
         root.toggleAttribute('data-mast-away', y > lastY && y > window.innerHeight * (window.innerWidth <= 900 ? 0.12 : 0.3))
         lastY = y
       }
-      const sig = signature(scene)
-      if (sig === last) return
-      last = sig
-      if (plate) plate.style.opacity = String(scene.visible)
-      if (scene.visible > 0.002) invalidate()
-      // the page only goes dark when the dusk plate is really drawn; the static fallback plan stays light
-      const drawn = root.dataset.webgl === 'on' && scene.visible > 0.5
-      const tone =
-        drawn && root.dataset.model === 'on' && scene.rift > 0.5 ? 'void' : drawn && scene.dusk > 0.65 ? 'dark' : 'light'
-      if (root.dataset.tone !== tone) root.dataset.tone = tone
+      if (y > 40 && intros.length) endIntro()
+      const ps = plateSignature(scene)
+      const cs = cosmosSignature(scene)
+      if (ps === last && cs === lastC) return
+      if (cs !== lastC) {
+        lastC = cs
+        roots.cosmos?.()
+      }
+      if (ps !== last) {
+        last = ps
+        if (plate) plate.style.opacity = String(scene.visible)
+        if (scene.visible > 0.002) roots.plate?.()
+      }
       const built = Math.min(13, Math.floor(scene.built + 0.001))
       if (builtEl && built !== lastBuilt) {
         lastBuilt = built
@@ -249,12 +271,11 @@ export default function Experience() {
 
     return () => {
       window.removeEventListener('specimen:ready', onReady)
-      window.removeEventListener('specimen:ready', retone)
-      window.removeEventListener('specimen:model', retone)
+      window.removeEventListener('cosmos:ready', onCosmos)
       document.removeEventListener('click', onClick)
       gsap.ticker.remove(tick)
       gsap.ticker.remove(raf)
-      introTween?.kill()
+      intros.forEach((t) => t.kill())
       ctx.revert()
       lenis?.destroy()
     }

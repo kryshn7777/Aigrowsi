@@ -1,10 +1,11 @@
 'use client'
 
-import { Canvas, invalidate, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { DOMAIN, SEGMENTS, fieldAt } from '@/specimen/field'
-import { RIFT, createUniforms, labels, rigCamera, scene, syncUniforms } from '@/specimen/scene'
+import { flagOff, roots } from '@/specimen/galaxy'
+import { PLATE_DPR, RIFT, createUniforms, labels, quality, rigCamera, scene, syncUniforms } from '@/specimen/scene'
 import { bakeFrag, fullscreenVert, plateFrag, shardFrag, shardVert } from '@/specimen/shaders'
 
 /** Read by instruments that need to turn a pointer into a plate position. */
@@ -109,10 +110,12 @@ function shardGeometry(count: number) {
 
 function Plate({ onReady }: { onReady: () => void }) {
   const { gl, camera, setDpr } = useThree()
+  // this root's own invalidate: the bare export re-renders every root (the cosmos too)
+  const invalidate = useThree((s) => s.invalidate)
   const res = useMemo(() => new THREE.Vector2(), [])
   const point = useMemo(() => new THREE.Vector3(), [])
-  // two resolution budgets: the plan is cheap and always drawn sharp; the raymarched model adapts
-  const perf = useRef({ last: 0, sum: 0, n: 0, dpr: 1, max: 1.5, model: 1 })
+  // two resolution budgets: the plan is cheap and always drawn sharp; the raymarched model follows the quality ladder (scene.ts)
+  const perf = useRef({ dpr: 1, max: 1.5, model: 1 })
 
   const modelReady = useRef(false)
   const shardsReady = useRef(false)
@@ -159,12 +162,9 @@ function Plate({ onReady }: { onReady: () => void }) {
 
   useEffect(() => {
     let cancelled = false
-    const field = bakeField(gl)
-    performance.mark('specimen:bake')
-    uniforms.uField.value = field
+    const baked: { field?: THREE.Texture } = {}
     const max = Math.min(window.devicePixelRatio || 1, 2)
     perf.current.max = max
-    perf.current.model = Math.min(max, 1) // full resolution first; the adaptive loop steps down if frames run long
     perf.current.dpr = max
     setDpr(max)
     // Compile off the main thread where KHR_parallel_shader_compile exists: the plan first (it is what
@@ -177,7 +177,28 @@ function Plate({ onReady }: { onReady: () => void }) {
       scene.add(probe)
       return gl.compileAsync(scene, camera).catch(() => undefined)
     }
-    stage(probes[0])
+    // cold start: Chrome's GPU process compiles in queue order, so the galaxy's programs go first and the plan's wait for the
+    // galaxy's first frame (2.5 s at most, and no wait where there is no cosmos)
+    const cosmosFirst = new Promise<void>((done) => {
+      if (typeof window.WebGL2RenderingContext === 'undefined' || flagOff('cosmos') || performance.getEntriesByName('cosmos:first').length) return done()
+      const t = window.setTimeout(done, 2500)
+      window.addEventListener(
+        'cosmos:first',
+        () => {
+          window.clearTimeout(t)
+          done()
+        },
+        { once: true },
+      )
+    })
+    cosmosFirst
+      .then(() => {
+        if (cancelled) return
+        baked.field = bakeField(gl) // its own (synchronous) compile also waits for the galaxy
+        performance.mark('specimen:bake')
+        uniforms.uField.value = baked.field
+        return stage(probes[0])
+      })
       .then(() => {
         if (cancelled) return
         mesh.visible = true
@@ -213,9 +234,24 @@ function Plate({ onReady }: { onReady: () => void }) {
     return () => {
       cancelled = true
       probes.forEach((p) => p.geometry.dispose())
-      field.dispose()
+      baked.field?.dispose()
     }
-  }, [gl, camera, mesh, plan, model, shards, shardMat, uniforms, setDpr, onReady])
+  }, [gl, camera, mesh, plan, model, shards, shardMat, uniforms, setDpr, onReady, invalidate])
+
+  // the ladder's plate rungs: model DPR, shadows, KERF detail (read again whenever the level changes)
+  useEffect(() => {
+    const apply = () => {
+      const L = quality.level
+      perf.current.model = Math.min(perf.current.max, PLATE_DPR[L])
+      uniforms.uShadows.value = L >= 4 ? 0 : 1
+      uniforms.uSteps.value = L >= 4 ? 96 : 160
+      uniforms.uRiftQ.value = L >= 5 ? 0 : 1
+      shards.geometry.setDrawRange(0, L >= 5 ? shards.geometry.getAttribute('position').count >> 1 : Infinity)
+    }
+    apply()
+    quality.subs.add(apply)
+    return () => void quality.subs.delete(apply)
+  }, [uniforms, shards])
 
   useEffect(
     () => () => {
@@ -245,7 +281,6 @@ function Plate({ onReady }: { onReady: () => void }) {
     const want = marching ? p.model : p.max
     if (want !== p.dpr) {
       p.dpr = want
-      p.sum = p.n = 0
       setDpr(want)
       invalidate() // a resized canvas is blank until drawn again
     }
@@ -267,38 +302,8 @@ function Plate({ onReady }: { onReady: () => void }) {
       l.el.style.opacity = point.z < 1 ? o.toFixed(3) : '0'
     }
 
-    // Adaptive model resolution: only judged while model frames are continuous (scrolling, building).
-    const now = performance.now()
-    const dt = now - p.last
-    p.last = now
-    if (marching && dt > 0 && dt < 100) {
-      p.sum += dt
-      p.n++
-      if (p.n >= 36) {
-        const avg = p.sum / p.n
-        p.sum = p.n = 0
-        // a 60 Hz display never beats ~16.7 ms, so "fast" means keeping up with it
-        if (avg > 26) {
-          if (p.model > 0.6) p.model = Math.max(0.6, p.model - 0.2)
-          else if (uniforms.uShadows.value !== 0) {
-            uniforms.uShadows.value = 0
-            uniforms.uSteps.value = 96
-          } else if (uniforms.uRiftQ.value !== 0) {
-            // tier 3: no isolines/strata/glow, half the shards
-            uniforms.uRiftQ.value = 0
-            shards.geometry.setDrawRange(0, shards.geometry.getAttribute('position').count >> 1)
-          }
-        } else if (avg < 18.5) {
-          if (uniforms.uRiftQ.value === 0) {
-            uniforms.uRiftQ.value = 1
-            shards.geometry.setDrawRange(0, Infinity)
-          } else if (uniforms.uShadows.value === 0) {
-            uniforms.uShadows.value = 1
-            uniforms.uSteps.value = 160
-          } else p.model = Math.min(p.max, p.model + 0.2)
-        }
-      }
-    }
+    quality.marching = marching
+    quality.feed(performance.now())
   })
 
   return (
@@ -332,7 +337,7 @@ function Fallback() {
 }
 
 export default function Specimen() {
-  const [support, setSupport] = useState<'unknown' | 'yes' | 'no'>('unknown')
+  const [support, setSupport] = useState<'unknown' | 'yes' | 'no' | 'off'>('unknown')
   const [lost, setLost] = useState(false)
 
   useEffect(() => {
@@ -342,7 +347,9 @@ export default function Specimen() {
     } catch {
       ok = false
     }
-    setSupport(ok ? 'yes' : 'no')
+    setSupport(flagOff('plate') ? 'off' : ok ? 'yes' : 'no') // ?plate=0: attribution runs, no plate at all
+    // ?worst: the page paints white behind the plate, for compositing tests
+    if (location.search.includes('worst')) document.documentElement.dataset.worst = '1'
   }, [])
 
   const onReady = useMemo(
@@ -358,7 +365,7 @@ export default function Specimen() {
   // stays mounted while the canvas takes over beneath it
   return (
     <div className="plate" aria-hidden="true">
-      {support === 'unknown' ? null : support === 'no' || lost ? (
+      {support === 'unknown' || support === 'off' ? null : support === 'no' || lost ? (
         <Fallback />
       ) : (
         <Boundary fallback={<Fallback />}>
@@ -366,11 +373,13 @@ export default function Specimen() {
             frameloop="demand"
             dpr={1}
             camera={{ fov: 3, near: 0.1, far: 1000, position: [0, 150, 0], manual: true }}
-            gl={{ antialias: false, alpha: false, depth: true, stencil: false, powerPreference: 'high-performance' }}
-            onCreated={({ gl }) => {
-              gl.setClearColor('#c4bdb0')
+            gl={{ antialias: false, alpha: true, depth: true, stencil: false, powerPreference: 'high-performance' }}
+            onCreated={({ gl, invalidate }) => {
+              roots.plate = () => invalidate()
+              gl.setClearColor(0x000000, 0) // transparent, premultiplied: the galaxy shows through
               gl.domElement.addEventListener('webglcontextlost', (e) => {
                 e.preventDefault()
+                delete roots.plate
                 setLost(true)
               })
             }}
@@ -380,7 +389,7 @@ export default function Specimen() {
         </Boundary>
       )}
       {/* until the first WebGL frame, the static plan holds the place so the page is never an empty board */}
-      {support !== 'no' && !lost ? (
+      {support !== 'no' && support !== 'off' && !lost ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img className="plate-fallback plate-placeholder" src={PLAN_SRC} alt="" />
       ) : null}
