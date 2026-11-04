@@ -19,13 +19,16 @@ npm run preview    # serves out/ on http://localhost:4173
 npm run typecheck
 ```
 
-Deploy the `out/` folder to any static host.
+Deploy the `out/` folder to any static host. Pushes to `main` also deploy to GitHub Pages through
+`.github/workflows/pages.yml` (one-time setup: repository Settings → Pages → Source: GitHub Actions); the
+workflow builds with `NEXT_PUBLIC_BASE_PATH=/<repo name>` because project sites are served from a sub-path.
 
 ## Environment
 
 | Variable | Effect |
 | --- | --- |
 | `NEXT_PUBLIC_SITE_URL` | Canonical origin, e.g. `https://aigrow.example`. Social-card URLs must be absolute; without it (or a host-provided URL from Vercel, Netlify or Cloudflare Pages) they point at `localhost`. |
+| `NEXT_PUBLIC_BASE_PATH` | Optional. Sub-path the site is served from, e.g. `/Aigrowsi` on GitHub Pages. Leave unset for a host that serves from the root. |
 | `NEXT_PUBLIC_CONTACT_EMAIL` | Optional. Adds an "Email brief" link to the brief composer. Without it nothing is sent anywhere: the brief can only be copied or downloaded, and the page says so. |
 
 ## How the specimen is drawn

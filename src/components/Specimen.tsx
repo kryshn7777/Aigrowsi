@@ -10,6 +10,9 @@ import { bakeFrag, fullscreenVert, plateFrag } from '@/specimen/shaders'
 /** Read by instruments that need to turn a pointer into a plate position. */
 export const view = { camera: null as THREE.PerspectiveCamera | null, width: 1, height: 1 }
 
+// plain <img> tags are not rewritten by Next, so the sub-path (GitHub Pages) is applied here
+const PLAN_SRC = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/specimen/plan.svg`
+
 const BAKE_W = 1024
 const BAKE_H = Math.round((BAKE_W * DOMAIN.sizeZ) / DOMAIN.sizeX)
 
@@ -244,7 +247,7 @@ function Fallback() {
     document.documentElement.dataset.webgl = 'off'
   }, [])
   // eslint-disable-next-line @next/next/no-img-element
-  return <img className="plate-fallback" src="/specimen/plan.svg" alt="" />
+  return <img className="plate-fallback" src={PLAN_SRC} alt="" />
 }
 
 export default function Specimen() {
@@ -298,7 +301,7 @@ export default function Specimen() {
       {/* until the first WebGL frame, the static plan holds the place so the page is never an empty board */}
       {support !== 'no' && !lost ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img className="plate-fallback plate-placeholder" src="/specimen/plan.svg" alt="" />
+        <img className="plate-fallback plate-placeholder" src={PLAN_SRC} alt="" />
       ) : null}
     </div>
   )
