@@ -1,0 +1,1197 @@
+/* AIGROW — a growth record.
+   Ground: grey board. Sheets: museum board. Ink: graphite. Blue marks what is proposed, never what is settled. */
+
+:root {
+  --fs-caption: 0.875rem; /* smallest running text: captions, tags, sheet block (the dense record readout stays at 13px so its legend never wraps into the model) */
+  --ground: #b5b1a8;
+  --sheet: #edece7;
+  --ink: #1d1d1b;
+  --ink-2: #3a3834;
+  --char: #4a3628;
+  --blue: #1f2bc0;
+  --dusk: #24231f;
+  --dusk-ink: #e9e7e1;
+  --dusk-ink-2: #bdb9b0;
+
+  --fg: var(--ink);
+  --fg-2: var(--ink-2);
+  --knock: var(--ground);
+  --mark: var(--blue);
+
+  --gutter: clamp(16px, 2.4vw, 40px);
+  --font: var(--font-archivo), 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+  color-scheme: light;
+}
+
+:root[data-tone='dark'] {
+  --fg: var(--dusk-ink);
+  --fg-2: var(--dusk-ink-2);
+  --knock: var(--dusk);
+  --mark: #9aa3ff;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--ground);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 1.0625rem;
+  font-stretch: 100%;
+  font-weight: 400;
+  line-height: 1.55;
+  font-kerning: normal;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: clip;
+}
+
+::selection {
+  background: var(--blue);
+  color: var(--sheet);
+}
+
+a {
+  color: inherit;
+}
+
+p {
+  margin: 0 0 1em;
+  max-width: 62ch;
+}
+
+:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 3px;
+}
+
+/* ---------------------------------------------------------------- type */
+
+.display {
+  margin: 0;
+  font-size: clamp(3.4rem, 10.6vw, 11.5rem);
+  font-stretch: 62%;
+  font-weight: 290;
+  line-height: 0.84;
+  letter-spacing: -0.012em;
+}
+
+.line {
+  display: block;
+}
+
+.h2 {
+  margin: 0 0 0.45em;
+  font-size: clamp(2.35rem, 5.2vw, 5.4rem);
+  font-stretch: 62%;
+  font-weight: 320;
+  line-height: 0.9;
+  letter-spacing: -0.006em;
+  text-wrap: balance;
+  max-width: 16ch;
+}
+
+.h3 {
+  margin: 0 0 0.45em;
+  font-size: clamp(1.35rem, 1.9vw, 1.85rem);
+  font-stretch: 85%;
+  font-weight: 560;
+  line-height: 1.06;
+}
+
+.lede {
+  font-size: clamp(1.1rem, 1.3vw, 1.3rem);
+  line-height: 1.45;
+  max-width: 36ch;
+}
+
+.voice {
+  font-size: clamp(1.2rem, 1.7vw, 1.55rem);
+  font-stretch: 80%;
+  font-weight: 430;
+  line-height: 1.3;
+  max-width: 32ch;
+}
+
+.annot {
+  font-size: var(--fs-caption);
+  font-stretch: 75%;
+  font-weight: 540;
+  line-height: 1.38;
+  letter-spacing: 0.004em;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-2);
+}
+
+/* Map lettering: big type knocks the contour lines out around itself instead of sitting on top of them. */
+@supports (paint-order: stroke fill) {
+  .halo {
+    paint-order: stroke fill;
+    -webkit-text-stroke: 0.09em var(--knock);
+  }
+}
+
+/* Text blocks over the plate clear the drawing beneath them, the way a label clears a contour.
+   Wide screens frame the specimen beside the copy, so only narrow screens (and dusk) need it. */
+.frontier-text {
+  background: var(--knock);
+  box-shadow: 0 0 0 0.8rem var(--knock);
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 1.25em;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  font-stretch: 85%;
+  font-weight: 560;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.btn:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.btn--ink {
+  background: var(--ink);
+  color: var(--sheet);
+}
+
+.btn--ink:hover {
+  background: var(--blue);
+  color: var(--sheet);
+}
+
+.btn:disabled,
+.btn.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn:disabled:hover,
+.btn.is-disabled:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.btn--ink:disabled:hover {
+  background: var(--ink);
+  color: var(--sheet);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 1.4rem 0 1.1rem;
+}
+
+.skip {
+  position: fixed;
+  z-index: 20;
+  left: var(--gutter);
+  top: var(--gutter);
+  padding: 0.8rem 1rem;
+  background: var(--ink);
+  color: var(--sheet);
+  transform: translateY(-200%);
+}
+
+.skip:focus {
+  transform: none;
+}
+
+/* ---------------------------------------------------------------- plate */
+
+.plate {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+.plate canvas {
+  display: block;
+}
+
+.plate-fallback {
+  position: fixed;
+  z-index: 0;
+  left: 58%;
+  top: 44%;
+  width: min(78vw, 1150px);
+  transform: translate(-50%, -50%);
+}
+
+/* placeholder before the first WebGL frame: sits where the arrival framing puts the plan, then fades out */
+.plate-placeholder {
+  left: 50%;
+  top: 26svh;
+  width: min(92vw, 720px);
+  transition: opacity 0.6s;
+  pointer-events: none;
+}
+
+:root[data-webgl='on'] .plate-placeholder,
+:root[data-webgl='off'] .plate-placeholder {
+  opacity: 0;
+}
+
+:root[data-webgl='off'] .plate-placeholder {
+  display: none;
+}
+
+/* the static plan cannot be reframed per sheet: it keeps to the room beside the copy, and copy keeps its knock */
+@media (min-width: 901px) {
+  .plate-fallback {
+    left: calc(540px + (100% - 540px) / 2);
+    top: 42%;
+    width: min(calc(100% - 640px), 900px);
+  }
+
+  .plate-placeholder {
+    left: 59%;
+    top: 32%;
+    width: min(56vw, 1000px);
+  }
+
+  :root[data-webgl='off'] .knock {
+    background: var(--knock);
+    box-shadow: 0 0 1.2rem 0.8rem var(--knock);
+  }
+}
+
+.instrument {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+:root[data-webgl='off'] .instrument,
+:root[data-webgl='off'] .readout-controls {
+  display: none;
+}
+
+/* under the copy (main comes later at the same level): a label never sits on top of text */
+.plate-labels {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  white-space: nowrap;
+  color: var(--fg);
+  font-size: var(--fs-caption);
+  font-stretch: 75%;
+  font-weight: 600;
+  line-height: 1;
+  translate: 10px -50%;
+  text-shadow:
+    0 0 2px var(--knock),
+    0 0 2px var(--knock),
+    0 0 4px var(--knock);
+  will-change: transform, opacity;
+}
+
+.tag::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  background: currentColor;
+  translate: -50% -50%;
+}
+
+.tag--layer {
+  translate: 30px -50%;
+}
+
+.tag--layer::before {
+  left: -30px;
+  width: 24px;
+  height: 1px;
+  translate: 0 -50%;
+}
+
+/* callouts at the end of a leader drawn on the plate: centred, haloed in the sheet they sit on */
+.tag--below,
+.tag--above {
+  --knock: var(--sheet);
+  translate: -50% 0;
+}
+
+.tag--above {
+  translate: -50% -100%;
+}
+
+.tag--below::before,
+.tag--above::before {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- masthead + title block */
+
+.mast {
+  position: fixed;
+  z-index: 10;
+  inset: 0 0 auto 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 1.1rem;
+  padding: var(--gutter);
+  color: var(--fg);
+  pointer-events: none;
+}
+
+.mast > * {
+  pointer-events: auto;
+}
+
+.wordmark {
+  font-size: 1.05rem;
+  font-stretch: 125%;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.3;
+  text-decoration: none;
+}
+
+.mast > .wordmark,
+.mast-line,
+.titleblock {
+  transition:
+    opacity 0.35s,
+    translate 0.35s;
+}
+
+/* reading down the page, the wordmark and sheet block step aside so copy never runs under them;
+   the sheet block stays while it holds focus or its list is open, and returns on the way back up */
+:root[data-mast-away] .mast > .wordmark:not(:focus-visible),
+:root[data-mast-away] .mast-line,
+:root[data-mast-away] .titleblock:not(:focus-within):not(:has(details[open])) {
+  opacity: 0;
+  translate: 0 -0.5rem;
+  pointer-events: none;
+}
+
+.mast-line {
+  font-size: var(--fs-caption);
+  font-stretch: 75%;
+  font-weight: 540;
+  line-height: 1.95;
+  color: var(--fg-2);
+}
+
+.titleblock {
+  margin-left: auto;
+  font-size: var(--fs-caption);
+  font-stretch: 75%;
+  font-weight: 560;
+}
+
+.titleblock details {
+  min-width: 15.5rem;
+  border: 1px solid var(--fg);
+  background: var(--knock);
+}
+
+.titleblock summary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.titleblock summary::-webkit-details-marker {
+  display: none;
+}
+
+.tb-current {
+  font-size: 0.95rem;
+  font-stretch: 85%;
+}
+
+.tb-built {
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.titleblock ol {
+  display: grid;
+  margin: 0;
+  padding: 0.35rem 0.75rem 0.55rem;
+  border-top: 1px solid var(--fg);
+  list-style: none;
+  counter-reset: sheet;
+}
+
+.titleblock li a {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.32rem 0;
+  text-decoration: none;
+}
+
+.titleblock li a::before {
+  counter-increment: sheet;
+  content: counter(sheet, decimal-leading-zero);
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.titleblock li a:hover,
+.titleblock li a[aria-current] {
+  color: var(--mark);
+}
+
+/* ---------------------------------------------------------------- sheets */
+
+main {
+  position: relative;
+  z-index: 1;
+}
+
+.sheet {
+  position: relative;
+  min-height: 100svh;
+  padding: calc(var(--gutter) + 5.5rem) var(--gutter) calc(var(--gutter) * 2);
+}
+
+/* arrival */
+.arrival {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gutter);
+  align-content: end;
+}
+
+.arrival h1 {
+  grid-column: 1 / 9;
+  align-self: end;
+}
+
+.arrival-side {
+  grid-column: 9 / 13;
+  align-self: end;
+}
+
+.arrival-side .lede {
+  margin-bottom: 0;
+}
+
+/* record */
+.record {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: 1fr auto;
+  column-gap: var(--gutter);
+}
+
+.record-text {
+  position: relative;
+  z-index: 1;
+  grid-column: 1 / 5;
+  grid-row: 1 / 3;
+  align-self: start;
+}
+
+.record-text p:not(.voice) {
+  font-size: 1rem;
+}
+
+.readout {
+  position: relative;
+  z-index: 1;
+  grid-column: 6 / 13;
+  grid-row: 2;
+  align-self: end;
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.5fr);
+  grid-template-rows: auto auto 1fr;
+  column-gap: var(--gutter);
+}
+
+.readout > * {
+  grid-column: 1;
+}
+
+.readout > .readout-count {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.readout > .readout-layers {
+  grid-column: 2;
+  grid-row: 2 / 4;
+  align-self: start;
+}
+
+.readout > .annot:first-child {
+  max-width: 54ch;
+  margin-bottom: 0.8rem;
+}
+
+.profile {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 0 0.6rem;
+  overflow: visible;
+}
+
+.profile-solid {
+  fill: var(--sheet);
+  stroke: var(--ink);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.profile-base {
+  stroke: var(--blue);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.profile-text {
+  fill: var(--ink-2);
+  font-size: 14px; /* user units: about 11.5px in the readout, larger beside the steps */
+  font-stretch: 75%;
+  font-weight: 600;
+}
+
+/* the dense record readout keeps its 13px captions so it never grows up into the model */
+.readout .annot {
+  font-size: 0.8125rem;
+}
+
+.readout-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: start;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.readout-controls button {
+  min-height: 36px;
+  padding: 0 0.8rem;
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-stretch: 80%;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.readout-controls button:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.readout-count {
+  margin-bottom: 0.4rem;
+}
+
+.readout-layers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.3rem 1.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.readout-layers li {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  column-gap: 0.4rem;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+}
+
+.readout-num {
+  color: var(--ink-2);
+  font-stretch: 75%;
+  font-variant-numeric: tabular-nums;
+}
+
+.readout-name {
+  font-stretch: 85%;
+  font-weight: 600;
+}
+
+.readout-note {
+  color: var(--ink-2);
+  font-size: 0.75rem;
+  font-stretch: 80%;
+}
+
+/* chapters with pinned steps */
+.chapter-head {
+  position: relative;
+  z-index: 1;
+  max-width: 33rem;
+}
+
+.chapter-head .h2 {
+  max-width: 18ch;
+}
+
+.steps {
+  position: relative;
+  min-height: 100svh;
+  margin: 0 calc(var(--gutter) * -1);
+  padding: calc(var(--gutter) + 6rem) var(--gutter) calc(var(--gutter) * 2);
+}
+
+.marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.4rem;
+  margin: 0 0 2rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+  font-stretch: 80%;
+  font-weight: 560;
+  color: var(--ink-2);
+}
+
+.marks li {
+  position: relative;
+  padding-top: 0.6rem;
+  border-top: 1px solid currentColor;
+  transition: color 0.3s;
+}
+
+.marks li[data-active] {
+  color: var(--ink);
+  border-top: 3px solid var(--blue);
+  padding-top: calc(0.6rem - 2px);
+}
+
+.marks--numbered {
+  counter-reset: phase;
+}
+
+.marks--numbered li::before {
+  counter-increment: phase;
+  content: counter(phase, decimal-leading-zero) ' ';
+  font-variant-numeric: tabular-nums;
+}
+
+.step {
+  max-width: 27rem;
+}
+
+.step + .step {
+  margin-top: 3.5rem;
+}
+
+.step-line {
+  font-size: clamp(1.1rem, 1.3vw, 1.25rem);
+  line-height: 1.42;
+}
+
+.step-num {
+  font-stretch: 62%;
+  font-weight: 400;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.step .profile {
+  max-width: 24rem;
+  margin: 1.2rem 0 0.8rem;
+}
+
+/* With motion, each pinned chapter shows one step at a time in the same place. */
+:root[data-motion='full'] .steps .step {
+  position: absolute;
+  left: var(--gutter);
+  top: calc(var(--gutter) + 9rem);
+  width: min(27rem, calc(100% - 2 * var(--gutter)));
+  margin: 0;
+}
+
+/* principles: the specimen in elevation runs through the middle of the sheet */
+.principles {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.principles-head {
+  max-width: 40rem;
+}
+
+.principles-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gutter);
+  align-self: end;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.principles-list p {
+  font-size: 0.95rem;
+}
+
+/* frontier: dusk. The plate goes dark and the page tone follows it (data-tone), so the copy is never
+   light-on-light during the approach or when WebGL is off. */
+.frontier {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: auto 1fr auto;
+  column-gap: var(--gutter);
+  min-height: 150svh;
+  color: var(--fg);
+}
+
+.frontier-title {
+  grid-column: 1 / 10;
+  max-width: none;
+  font-size: clamp(2.6rem, 6.4vw, 6.8rem);
+}
+
+.frontier-text {
+  grid-column: 8 / 13;
+  grid-row: 3;
+  align-self: end;
+  box-shadow: 0 0 1.2rem 1rem var(--knock);
+}
+
+.frontier-text p {
+  font-size: 1rem;
+}
+
+.frontier-tag {
+  margin: 1.6rem 0 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--fg-2);
+  font-size: 1.15rem;
+  font-stretch: 85%;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+/* fields */
+.fields {
+  padding-bottom: calc(var(--gutter) * 4);
+}
+
+.fields .chapter-head {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gutter);
+  align-items: end;
+  max-width: none;
+  margin-bottom: 3rem;
+}
+
+.fields .chapter-head .h2 {
+  grid-column: 1 / 7;
+}
+
+.fields .chapter-head .lede {
+  grid-column: 8 / 13;
+  margin: 0 0 0.45em;
+}
+
+.drawers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: calc(var(--gutter) * 1.5);
+}
+
+.drawer {
+  margin: 0;
+}
+
+.drawer svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 1.2rem;
+  border-top: 1px solid var(--ink);
+  padding-top: 1.2rem;
+  overflow: visible;
+}
+
+.drawer-ring {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 0.9;
+  vector-effect: non-scaling-stroke;
+}
+
+.drawer-ring--index {
+  stroke-width: 1.7;
+}
+
+.drawer-ring--dashed {
+  stroke: var(--blue);
+  stroke-dasharray: 5 4;
+}
+
+.drawer-seed {
+  fill: var(--ink);
+}
+
+.drawer figcaption p {
+  font-size: 0.97rem;
+}
+
+/* resolution */
+.resolution {
+  display: flex;
+  align-items: flex-end;
+}
+
+.resolution-line {
+  max-width: none;
+  margin: 0;
+  font-size: clamp(2.6rem, 6.2vw, 6.6rem);
+  font-stretch: 62%;
+  font-weight: 300;
+  line-height: 0.92;
+}
+
+.resolution-mark {
+  display: block;
+  margin-bottom: 0.15em;
+  font-size: 0.42em;
+  font-stretch: 125%;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+/* the next layer */
+.next {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gutter);
+  row-gap: 3rem;
+  align-content: start;
+  min-height: 150svh;
+}
+
+.next-text {
+  grid-column: 1 / 6;
+}
+
+.next-text .h2 {
+  max-width: 14ch;
+}
+
+.next-staked {
+  margin: 1.4rem 0 0;
+  padding-left: 0.8rem;
+  border-left: 3px solid var(--blue);
+  font-size: 1.05rem;
+  font-stretch: 85%;
+  font-weight: 560;
+}
+
+.brief {
+  grid-column: 1 / 6;
+  position: relative;
+  padding: 1.4rem 1.4rem 1.2rem;
+  background: var(--sheet);
+  /* the sheet's cut edge */
+  box-shadow:
+    2px 2px 0 var(--char),
+    0 0 0 1px rgba(29, 29, 27, 0.18);
+}
+
+.brief-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--ink);
+  max-width: none;
+}
+
+.brief-field {
+  margin-bottom: 1rem;
+}
+
+.brief-field label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+  font-size: 0.95rem;
+  font-stretch: 85%;
+  font-weight: 600;
+}
+
+.brief-stake {
+  width: 0.55rem;
+  height: 0.55rem;
+  border: 1px solid var(--blue);
+  transition: background-color 0.3s;
+}
+
+.brief-field[data-answered] .brief-stake {
+  background: var(--blue);
+}
+
+.brief textarea {
+  display: block;
+  width: 100%;
+  min-height: 3.6rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(29, 29, 27, 0.35);
+  border-radius: 0;
+  background: #f6f5f1;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.brief textarea::placeholder {
+  color: #6f6c66;
+}
+
+.brief textarea:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 0;
+  border-color: var(--blue);
+}
+
+.brief-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1.1rem 0 0.4rem;
+}
+
+.brief-status {
+  min-height: 1.4em;
+  margin: 0.2rem 0 0.4rem;
+  font-size: 0.9rem;
+}
+
+.brief-privacy {
+  margin: 0;
+}
+
+/* footer */
+.foot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gutter);
+  margin: 0 var(--gutter) var(--gutter);
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--ink);
+}
+
+.foot-line {
+  grid-column: 1 / 7;
+  font-size: 1.1rem;
+  font-stretch: 85%;
+}
+
+.foot-line .wordmark {
+  margin-right: 0.4rem;
+}
+
+.foot .annot:nth-of-type(2) {
+  grid-column: 7 / 11;
+}
+
+.foot .annot:nth-of-type(3) {
+  grid-column: 11 / 13;
+  justify-self: end;
+}
+
+/* ---------------------------------------------------------------- narrow screens */
+
+@media (max-width: 900px) {
+  /* the specimen takes the top of the first screen; the copy starts below it */
+  .arrival {
+    padding-top: calc(var(--gutter) + 40svh);
+  }
+
+  .arrival h1,
+  .arrival-side {
+    grid-column: 1 / -1;
+  }
+
+  .arrival-side {
+    margin-top: 2rem;
+  }
+
+  .record-text,
+  .readout {
+    grid-column: 1 / -1;
+  }
+
+  .record-text {
+    grid-row: 1;
+  }
+
+  .readout {
+    display: block;
+    grid-row: 2;
+    margin-top: 40svh;
+  }
+
+  .readout-layers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .knock {
+    background: var(--knock);
+    box-shadow: 0 0 1.2rem 0.8rem var(--knock);
+  }
+
+  .fields .chapter-head {
+    display: block;
+  }
+
+  .fields .chapter-head .lede {
+    margin: 0;
+  }
+
+  /* the closing line starts at the top and leaves the model's room below it, as the record's readout does */
+  .resolution {
+    align-items: flex-start;
+    padding-top: calc(var(--gutter) + 40svh);
+  }
+
+  .principles-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 40svh; /* the room the model is framed in, between the head and the list */
+  }
+
+  .frontier-title,
+  .frontier-text {
+    grid-column: 1 / -1;
+  }
+
+  .drawers {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 34rem;
+  }
+
+  .next-text,
+  .brief {
+    grid-column: 1 / -1;
+  }
+
+  .next {
+    padding-top: calc(var(--gutter) + 22rem);
+  }
+
+  .foot-line,
+  .foot .annot:nth-of-type(2),
+  .foot .annot:nth-of-type(3) {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
+@media (max-width: 600px) {
+  body {
+    font-size: 1rem;
+  }
+
+  .mast-line {
+    display: none;
+  }
+
+  .titleblock details {
+    min-width: 0;
+  }
+
+  .tb-built {
+    display: none;
+  }
+
+  .readout-layers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .readout-note,
+  .tag--layer {
+    display: none;
+  }
+
+  .principles-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :root[data-motion='full'] .steps .step {
+    top: calc(var(--gutter) + 11rem);
+  }
+
+  .knock {
+    box-shadow: 0 0 0.9rem 0.55rem var(--knock);
+  }
+}
+
+/* short wide screens: the pinned record keeps its ledger to names */
+@media (min-width: 901px) and (max-height: 820px) {
+  .readout-note {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

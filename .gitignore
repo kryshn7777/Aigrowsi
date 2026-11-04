@@ -1,0 +1,13 @@
+node_modules
+.next
+/out
+next-env.d.ts
+*.tsbuildinfo
+scripts/out/*.ttf
+.playwright-mcp
+
+# local tooling and the earlier standalone mockup (kept out of the published site)
+mockup
+.claude
+.impeccable
+generated-images
